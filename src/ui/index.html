@@ -1,0 +1,2123 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DolfPower - AntiDetect Browser</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🐬</span>
+                    <span class="logo-text">DolfPower</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item nav-jarvis-ai" data-section="jarvis" onclick="switchSection('jarvis')">
+                    <i data-lucide="bot"></i>
+                    <span data-i18n="nav.jarvis">JARVIS AI</span>
+                    <span id="jarvis-badge" class="nav-badge" style="display: none;">0</span>
+                </a>
+                <div class="nav-divider-jarvis" style="height: 1px; background: rgba(255,255,255,0.1); margin: 10px 0;"></div>
+                
+                <a href="#" class="nav-item active" data-section="profiles" onclick="switchSection('profiles')">
+                    <i data-lucide="user-circle"></i>
+                    <span data-i18n="nav.profiles">Profiles</span>
+                </a>
+                <a href="#" class="nav-item" data-section="proxies" onclick="switchSection('proxies')">
+                    <i data-lucide="globe"></i>
+                    <span data-i18n="nav.proxies">Proxies</span>
+                </a>
+                <a href="#" class="nav-item" data-section="groups" onclick="switchSection('groups')">
+                    <i data-lucide="layers"></i>
+                    <span data-i18n="nav.groups">Groups</span>
+                </a>
+                <a href="#" class="nav-item" data-section="scenarios" onclick="switchSection('scenarios')">
+                    <i data-lucide="play-circle"></i>
+                    <span data-i18n="nav.scenarios">Scenarios</span>
+                </a>
+                <a href="#" class="nav-item" data-section="extensions" onclick="switchSection('extensions')">
+                    <i data-lucide="puzzle"></i>
+                    <span data-i18n="nav.extensions">Extensions</span>
+                </a>
+                <a href="#" class="nav-item" data-section="bookmarks" onclick="switchSection('bookmarks')">
+                    <i data-lucide="bookmark"></i>
+                    <span data-i18n="nav.bookmarks">Bookmarks</span>
+                </a>
+                <a href="#" class="nav-item" data-section="security" onclick="switchSection('security')">
+                    <i data-lucide="shield"></i>
+                    <span data-i18n="nav.security">Security</span>
+                </a>
+
+                <div class="nav-divider" style="height: 1px; background: rgba(255,255,255,0.05); margin: 10px 0;"></div>
+                <a href="#" class="nav-item" data-section="trash" onclick="switchSection('trash')">
+                    <i data-lucide="trash-2"></i>
+                    <span data-i18n="nav.trash">Trash Bin</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="theme-toggle" onclick="toggleTheme()">
+                    <i data-lucide="moon" class="theme-icon-dark"></i>
+                    <i data-lucide="sun" class="theme-icon-light"></i>
+                </div>
+                <div class="lang-toggle" onclick="toggleLanguage()">
+                    <span class="lang-label">EN</span>
+                </div>
+                <a href="https://t.me/piracrypt" target="_blank" class="theme-toggle" title="Telegram">
+                    <i data-lucide="send" style="width: 18px; height: 18px; color: var(--sidebar-text);"></i>
+                </a>
+                <div class="theme-toggle" onclick="logout()" title="Logout and Lock">
+                    <i data-lucide="log-out" style="width: 18px; height: 18px; color: var(--danger);"></i>
+                </div>
+                <div class="version">v0.5.0</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <h1 class="page-title" data-i18n="profiles.title">Browser Profiles</h1>
+                    <span class="profile-count">(<span id="total-count">0</span>)</span>
+                </div>
+                <div class="top-bar-right">
+                    <div id="security-status-indicator" class="security-status" title="Data is encrypted with your Master Password">
+                        <i data-lucide="lock"></i>
+                        <span data-i18n="auth.protected">Protected</span>
+                    </div>
+                    <button class="btn btn-primary" onclick="openCreateModal()">
+                        <i data-lucide="plus"></i>
+                        <span data-i18n="profiles.create">New Profile</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="openBulkCreateModal()">
+                        <i data-lucide="layers"></i>
+                        <span data-i18n="profiles.createMany">Many Profiles</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="openImportModal()">
+                        <i data-lucide="upload"></i>
+                        <span data-i18n="profiles.import">Import</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="openExportModal()">
+                        <i data-lucide="download"></i>
+                        <span data-i18n="common.export">Export</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Profiles Section -->
+            <section id="profiles-section" class="content-section active">
+                <!-- Toolbar -->
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-box">
+                            <i data-lucide="search"></i>
+                            <input type="text" id="search-input" placeholder="Search profiles..." data-i18n-placeholder="profiles.search" oninput="searchProfiles(this.value)">
+                        </div>
+                        <select id="status-filter" class="filter-select" onchange="filterByStatus(this.value)">
+                            <option value="" data-i18n="filter.allStatus">All Status</option>
+                            <option value="new" data-i18n="filter.new">New</option>
+                            <option value="active" data-i18n="filter.active">Active</option>
+                            <option value="warning" data-i18n="filter.warning">Warning</option>
+                            <option value="banned" data-i18n="filter.banned">Banned</option>
+                        </select>
+                        <select id="group-filter" class="filter-select" onchange="filterByGroup(this.value)">
+                            <option value="" data-i18n="filter.allGroups">All Groups</option>
+                        </select>
+                    </div>
+                    <div class="toolbar-right">
+                        <div class="bulk-actions" id="bulk-actions" style="display: none;">
+                            <span class="selected-count"><span id="selected-count">0</span> <span data-i18n="profiles.selected">selected</span></span>
+                            <button class="btn btn-sm btn-success" onclick="bulkStartProfiles()">
+                                <i data-lucide="play"></i>
+                            </button>
+                            <button class="btn btn-sm btn-warning" onclick="bulkStopProfiles()">
+                                <i data-lucide="square"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="bulkDeleteProfiles()">
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Profiles Table -->
+                <div class="table-container">
+                    <table class="data-table" id="profiles-table">
+                        <thead>
+                            <tr>
+                                <th class="th-checkbox">
+                                    <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)">
+                                </th>
+                                <th class="th-status"></th>
+                                <th class="sortable" onclick="sortProfiles('name')" data-i18n="table.name">Name</th>
+                                <th class="sortable" onclick="sortProfiles('group_id')" data-i18n="table.group">Group</th>
+                                <th class="sortable" onclick="sortProfiles('proxy')" data-i18n="table.proxy">Proxy</th>
+                                <th class="sortable" onclick="sortProfiles('status')" data-i18n="table.status">Status</th>
+                                <th class="sortable" onclick="sortProfiles('last_opened_at')" data-i18n="table.lastOpen">Last Open</th>
+                                <th data-i18n="table.notes">Notes</th>
+                                <th class="th-actions" data-i18n="table.actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="profiles-tbody">
+                            <tr class="loading-row">
+                                <td colspan="8">
+                                    <div class="loading-spinner"></div>
+                                    <span data-i18n="common.loading">Loading...</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Proxies Section -->
+            <section id="proxies-section" class="content-section">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-box">
+                            <i data-lucide="search"></i>
+                            <input type="text" id="proxy-search" placeholder="Search proxies..." oninput="searchProxies(this.value)">
+                        </div>
+                    </div>
+                    <div class="toolbar-right">
+                        <div class="bulk-actions" id="proxy-bulk-actions" style="display: none;">
+                            <span class="selected-count"><span id="proxy-selected-count">0</span> <span data-i18n="profiles.selected">selected</span></span>
+                            <button class="btn btn-sm btn-secondary" onclick="bulkTestProxies()" title="Test Selected">
+                                <i data-lucide="activity"></i>
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="bulkDeleteProxies()" title="Delete Selected">
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-primary" onclick="openAddProxyModal()">
+                            <i data-lucide="plus"></i>
+                            <span data-i18n="proxies.add">Add Proxy</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="openBulkProxyModal()">
+                            <i data-lucide="file-text"></i>
+                            <span data-i18n="proxies.bulk">Bulk Import</span>
+                        </button>
+                        <button class="btn btn-success" onclick="openFreeProxyModal()">
+                            <i data-lucide="download"></i>
+                            <span data-i18n="proxies.free">Free Proxies</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table" id="proxies-table">
+                        <thead>
+                            <tr>
+                                <th class="th-checkbox"><input type="checkbox" onchange="toggleSelectAllProxies(this.checked)"></th>
+                                <th data-i18n="table.name">Name</th>
+                                <th data-i18n="table.type">Type</th>
+                                <th data-i18n="table.host">Host</th>
+                                <th data-i18n="table.port">Port</th>
+                                <th data-i18n="table.country">Country</th>
+                                <th data-i18n="form.group">Group</th>
+                                <th data-i18n="table.status">Status</th>
+                                <th data-i18n="table.actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="proxies-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Extensions Section -->
+            <section id="extensions-section" class="content-section">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-box">
+                            <i data-lucide="search"></i>
+                            <input type="text" placeholder="Search extensions..." oninput="searchExtensions(this.value)">
+                        </div>
+                    </div>
+                    <div class="toolbar-right">
+                        <div class="bulk-actions" id="extension-bulk-actions" style="display: none;">
+                            <span class="selected-count"><span id="extension-selected-count">0</span> <span data-i18n="profiles.selected">selected</span></span>
+                            <button class="btn btn-sm btn-danger" onclick="bulkDeleteExtensions()" title="Delete Selected">
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-primary" onclick="openAddExtensionModal()">
+                            <i data-lucide="plus"></i>
+                            <span data-i18n="extensions.add">Add Extension</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="openChromeStoreModal()">
+                            <i data-lucide="shopping-cart"></i>
+                            <span data-i18n="modal.chromeStore">Chrome Web Store</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="extensions-grid" id="extensions-grid"></div>
+            </section>
+
+            <!-- Bookmarks Section -->
+            <section id="bookmarks-section" class="content-section">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-box">
+                            <i data-lucide="search"></i>
+                            <input type="text" placeholder="Search bookmarks..." oninput="searchBookmarks(this.value)">
+                        </div>
+                    </div>
+                    <div class="toolbar-right">
+                        <div class="bulk-actions" id="bookmark-bulk-actions" style="display: none;">
+                            <span class="selected-count"><span id="bookmark-selected-count">0</span> <span data-i18n="profiles.selected">selected</span></span>
+                            <button class="btn btn-sm btn-danger" onclick="bulkDeleteBookmarks()" title="Delete Selected">
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-secondary" onclick="openMassBookmarkModal()" title="Apply to profiles">
+                            <i data-lucide="share-2"></i>
+                            <span data-i18n="bookmarks.massManage">Mass Manage</span>
+                        </button>
+                        <button class="btn btn-primary" onclick="openAddBookmarkModal()">
+                            <i data-lucide="plus"></i>
+                            <span data-i18n="bookmarks.add">Add Bookmark</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="bookmarks-list" id="bookmarks-list"></div>
+            </section>
+
+            <!-- Groups Section -->
+            <section id="groups-section" class="content-section">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <h2 data-i18n="groups.title">Profile Groups</h2>
+                    </div>
+                    <div class="toolbar-right">
+                        <button class="btn btn-primary" onclick="openCreateGroupModal()">
+                            <i data-lucide="plus"></i>
+                            <span data-i18n="groups.add">Add Group</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="table.name">Name</th>
+                                <th data-i18n="table.color">Color</th>
+                                <th data-i18n="table.description">Description</th>
+                                <th data-i18n="table.profiles">Profiles</th>
+                                <th data-i18n="nav.proxies">Proxies</th>
+                                <th data-i18n="table.actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groups-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- RPA Scenarios Section -->
+            <section id="scenarios-section" class="content-section">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <h2 data-i18n="rpa.title">RPA Scenarios</h2>
+                    </div>
+                    <div class="toolbar-right">
+                        <button class="btn btn-primary" onclick="openCreateScenarioModal()">
+                            <i data-lucide="plus"></i>
+                            <span data-i18n="rpa.create">Create Scenario</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="scenarios-grid" id="scenarios-grid"></div>
+            </section>
+
+            <!-- Trash Bin Section -->
+            <section id="trash-section" class="content-section">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <h2 data-i18n="nav.trash">Trash Bin</h2>
+                        <span class="help-text" style="margin-left: 15px; color: var(--text-muted);">Profiles are kept for 10 days before permanent deletion.</span>
+                    </div>
+                    <div class="toolbar-right">
+                        <button class="btn btn-danger" onclick="emptyTrash()">
+                            <i data-lucide="trash-2"></i>
+                            <span data-i18n="trash.empty">Empty Trash</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="table.name">Name</th>
+                                <th data-i18n="table.deletedAt">Deleted At</th>
+                                <th style="color: var(--warning);">Auto-Delete In</th>
+                                <th data-i18n="table.actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trash-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Security Section -->
+            <section id="security-section" class="content-section">
+                <div class="container-narrow" style="max-width: 800px; margin: 0 auto; padding: 20px;">
+                    <div class="settings-card" style="background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
+                        <div class="settings-header" style="padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px;">
+                            <i data-lucide="shield" style="color: var(--primary);"></i>
+                            <h2 style="margin: 0; font-size: 1.25rem;" data-i18n="nav.security">Security Settings</h2>
+                        </div>
+                        <div class="settings-body" style="padding: 20px;">
+                            <!-- Password Change -->
+                            <div class="settings-group" style="margin-bottom: 30px;">
+                                <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 1.1rem;"><i data-lucide="key" style="width: 18px;"></i> Master Password</h3>
+                                <p class="help-text" style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px;">Change the password used to encrypt your local data and session info.</p>
+                                <div class="form-group" style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-size: 0.85rem;">Current Password</label>
+                                    <input type="password" id="sec-old-password" placeholder="••••••••" class="form-control" style="width: 100%; padding: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                                </div>
+                                <div class="form-row" style="display: flex; gap: 15px; margin-bottom: 20px;">
+                                    <div class="form-group" style="flex: 1;">
+                                        <label style="display: block; margin-bottom: 5px; font-size: 0.85rem;">New Password</label>
+                                        <input type="password" id="sec-new-password" placeholder="••••••••" class="form-control" style="width: 100%; padding: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                                    </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label style="display: block; margin-bottom: 5px; font-size: 0.85rem;">Confirm New Password</label>
+                                        <input type="password" id="sec-confirm-password" placeholder="••••••••" class="form-control" style="width: 100%; padding: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary" onclick="changeMasterPassword()">
+                                    Update Password
+                                </button>
+                            </div>
+
+                            <div class="divider" style="height: 1px; background: var(--border-color); margin: 30px 0;"></div>
+
+                            <!-- 2FA Setup -->
+                            <div class="settings-group">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <h3 style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.1rem;"><i data-lucide="smartphone" style="width: 18px;"></i> Two-Factor Authentication (2FA)</h3>
+                                    <span id="2fa-status-badge" class="status-badge">Disabled</span>
+                                </div>
+                                <p class="help-text" style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px;">Protect your account with an extra layer of security. Required when logging in from new devices.</p>
+                                
+                                <div id="2fa-setup-area" style="display: none; margin-top: 15px; padding: 20px; background: rgba(255,255,255,0.02); border-radius: 10px; border: 1px dashed var(--border-color);">
+                                    <div style="display: flex; gap: 20px; align-items: flex-start;">
+                                        <div id="2fa-qr-placeholder" style="width: 160px; height: 160px; background: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: black; font-weight: bold; text-align: center; padding: 15px; flex-shrink: 0;">
+                                            QR Code
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <p style="font-size: 14px; margin-bottom: 12px; font-weight: 500;">1. Scan manual code in your authenticator app</p>
+                                            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px; background: var(--bg-primary); padding: 8px; border-radius: 4px;">Manual Secret: <code id="2fa-secret-text" style="color: var(--primary); font-weight: bold;">XXXX XXXX XXXX XXXX</code></p>
+                                            <div class="form-group" style="margin-bottom: 15px;">
+                                                <label style="display: block; margin-bottom: 5px; font-size: 0.85rem;">2. Enter Verification Code</label>
+                                                <input type="text" id="2fa-setup-code" placeholder="000000" maxlength="6" style="letter-spacing: 4px; font-weight: bold; text-align: center; width: 100%; padding: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-size: 1.2rem;">
+                                            </div>
+                                            <button class="btn btn-success" style="width: 100%;" onclick="enable2FA()">Confirm & Enable</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button id="btn-toggle-2fa" class="btn btn-secondary" onclick="start2FASetup()">
+                                    Enable 2FA
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Jarvis AI Section -->
+            <section id="jarvis-section" class="content-section">
+                <div class="jarvis-container">
+                    <div class="jarvis-sidebar">
+                        <div class="jarvis-status-card">
+                            <div class="status-indicator" id="jarvis-ai-status">
+                                <span class="status-dot"></span>
+                                <span class="status-text" data-i18n="nav.jarvis">AI Assistant</span>
+                            </div>
+                        </div>
+
+                        <button id="btn-launch-jarvis-profile" class="btn btn-primary btn-block" style="margin-bottom: 15px;" onclick="launchJarvisMasterProfile()">
+                            <i data-lucide="play"></i> <span data-i18n="jarvis.launchOrchestrator">Launch Orchestrator</span>
+                        </button>
+
+                        <div class="jarvis-permission-badge clickable" id="jarvis-permission-display" style="margin-bottom: 15px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 8px; font-size: 11px; display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="openJarvisConfig()">
+                            <i data-lucide="shield"></i>
+                            <span><span data-i18n="jarvis.permissionLevel">Rights</span>: <strong id="jarvis-permission-text">Standard</strong></span>
+                        </div>
+                        
+                        <div class="jarvis-recording-status" id="jarvis-recording-panel" style="display: none;">
+                            <div class="recording-animation">
+                                <span class="rec-dot"></span>
+                                <span>RECORDING...</span>
+                            </div>
+                            <div class="recording-info">
+                                <small>Press Ctrl+Shift+Space to finish</small>
+                            </div>
+                        </div>
+
+                        <div class="jarvis-sessions-list">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <h3 data-i18n="jarvis.history" style="margin: 0;">Recent Chats</h3>
+                                <button class="btn btn-sm btn-primary" onclick="createJarvisSession()" title="New Chat">
+                                    <i data-lucide="plus"></i>
+                                </button>
+                            </div>
+                            <div id="jarvis-history-items">
+                                <!-- Loaded via JS -->
+                            </div>
+
+                            <div id="jarvis-active-session-files" style="margin-top: 20px; display: none;">
+                                <h3 style="margin-bottom: 10px; font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Session Files</h3>
+                                <div id="jarvis-sidebar-files-list" class="jarvis-files-list-vertical" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Settings Button at the bottom of sidebar -->
+                        <div style="margin-top: auto; padding-top: 20px;">
+                            <button class="btn btn-block btn-secondary" onclick="openJarvisConfig()">
+                                <i data-lucide="settings"></i>
+                                <span data-i18n="jarvis.configTitle">Settings</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="jarvis-main">
+                        <div class="jarvis-task-status-bar" id="jarvis-task-status-bar">
+                            <!-- Tasks will be loaded here -->
+                        </div>
+                        <div class="jarvis-chat-container">
+                            <div class="jarvis-messages" id="jarvis-messages">
+                                <div class="message system">
+                                    <div class="message-content">
+                                        <span data-i18n="jarvis.welcome">Hello! I am Jarvis, your AI automation assistant. How can I help you today?</span>
+                                        <div class="jarvis-suggestions">
+                                            <button onclick="jarvisQuickCommand('record')" data-i18n="jarvis.recordAction">Record new action</button>
+                                            <button onclick="jarvisQuickCommand('setup_metamask')" data-i18n="jarvis.setupMetamask">Setup Metamask in profiles</button>
+                                            <button onclick="jarvisQuickCommand('help')" data-i18n="jarvis.capabilities">What can you do?</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="jarvis-input-area">
+                                <div class="jarvis-input-wrapper">
+                                    <button class="btn-attach" onclick="jarvisAttachFile()" title="Attach File">
+                                        <i data-lucide="paperclip"></i>
+                                    </button>
+                                    <textarea id="jarvis-input" placeholder="Type your command here..." data-i18n-placeholder="jarvis.inputPlaceholder" onkeydown="handleJarvisKeydown(event)"></textarea>
+                                    <button class="btn-send" onclick="sendJarvisMessage()" id="jarvis-send-btn">
+                                        <i data-lucide="send"></i>
+                                    </button>
+                                </div>
+                                <div class="jarvis-input-footer">
+                                    <span data-i18n="jarvis.inputFooter">Supports {{FILE:path}} and natural language</span>
+                                </div>
+                                <div id="jarvis-attached-files-container" style="margin-top: 10px; display: none;">
+                                    <h4 style="font-size: 11px; color: var(--text-secondary); margin-bottom: 5px;">Attached Files:</h4>
+                                    <div id="jarvis-files-list" class="jarvis-files-list" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    </div>
+
+    </div>
+
+    <!-- Auth Modals -->
+    <div class="modal active" id="auth-modal" style="z-index: 10000; display: none;">
+        <div class="modal-backdrop" style="background: rgba(0,0,0,0.9); backdrop-filter: blur(10px);"></div>
+        <div class="modal-content modal-sm" style="background: var(--bg-secondary); border: 1px solid var(--border-color);">
+            <div class="modal-header" style="justify-content: center; border: none; padding-bottom: 0;">
+                <div class="logo" style="font-size: 64px; margin-bottom: 10px;">🐬</div>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <h1 id="auth-title" style="margin-bottom: 10px; font-size: 24px;">Unlock DolfPower</h1>
+                <p id="auth-desc" class="help-text" style="margin-bottom: 25px; line-height: 1.5;">Enter your master password to access your profiles.</p>
+                
+                <div id="auth-setup-fields" style="display: none;">
+                    <div class="form-group">
+                        <input type="password" id="auth-setup-password" class="input-lg" placeholder="Create Master Password" style="text-align: center;">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="auth-setup-confirm" class="input-lg" placeholder="Confirm Password" style="text-align: center;">
+                    </div>
+                    <button class="btn btn-primary btn-block btn-lg" onclick="handleAuthSetup()">
+                        <i data-lucide="shield"></i> <span data-i18n="auth.setupBtn">Initialize Security</span>
+                    </button>
+                </div>
+
+                <div id="auth-login-fields" style="display: none;">
+                    <div class="form-group">
+                        <input type="password" id="auth-login-password" class="input-lg" placeholder="Enter Master Password" style="text-align: center;" onkeydown="if(event.key==='Enter')handleAuthLogin()">
+                    </div>
+                    <button class="btn btn-primary btn-block btn-lg" onclick="handleAuthLogin()">
+                        <i data-lucide="unlock"></i> <span data-i18n="auth.loginBtn">Unlock</span>
+                    </button>
+                </div>
+
+                <div id="auth-2fa-fields" style="display: none;">
+                    <p class="warning-text" style="margin-bottom: 15px;"><i data-lucide="alert-triangle"></i> New Hardware Detected</p>
+                    <div class="form-group">
+                        <input type="text" id="auth-2fa-code" class="input-lg" placeholder="000000" maxlength="6" style="text-align: center; font-size: 24px; letter-spacing: 5px;">
+                    </div>
+                    <button class="btn btn-success btn-block btn-lg" onclick="handleAuthVerify2FA()">
+                        <i data-lucide="check-circle"></i> <span data-i18n="auth.verifyBtn">Verify & Trust</span>
+                    </button>
+                </div>
+                
+                <div id="auth-error" class="error-text" style="margin-top: 15px; display: none; color: var(--danger);"></div>
+            </div>
+            <div class="modal-footer" style="justify-content: center; border: none; padding-top: 0; opacity: 0.5;">
+                <div class="lang-toggle" onclick="toggleLanguage()">
+                    <span class="lang-label">EN</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Loading Overlay -->
+    <div id="global-loader" class="loading-overlay" style="display: none;">
+        <div class="loader-content">
+            <div class="loading-spinner large"></div>
+            <h2 id="loader-text">Processing...</h2>
+            <p id="loader-subtext">Please wait, this may take a moment.</p>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div class="modal" id="confirm-modal">
+        <div class="modal-backdrop" onclick="closeConfirm(false)"></div>
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h2 id="confirm-title">Confirm Action</h2>
+                <button class="modal-close" onclick="closeConfirm(false)">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message" style="font-size: 15px; line-height: 1.6;"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeConfirm(false)" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-danger" id="confirm-button" onclick="closeConfirm(true)">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Create Modal -->
+    <div class="modal" id="bulk-create-modal">
+        <div class="modal-backdrop" onclick="closeModal('bulk-create-modal')"></div>
+        <div class="modal-content modal-xl">
+            <div class="modal-header">
+                <h2 data-i18n="profiles.createMany">Create Many Profiles</h2>
+                <button class="modal-close" onclick="closeModal('bulk-create-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body-scrollable">
+                <div class="modal-nav-container">
+                    <div class="form-tabs">
+                        <button class="form-tab active" onclick="scrollToSection('bulk', 'basic')">
+                            <i data-lucide="settings"></i>
+                            <span data-i18n="form.basic">Basic</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('bulk', 'proxy')">
+                            <i data-lucide="globe"></i>
+                            <span data-i18n="form.proxy">Proxy</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('bulk', 'fingerprint')">
+                            <i data-lucide="fingerprint"></i>
+                            <span data-i18n="form.fingerprint">Fingerprint</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('bulk', 'extensions')">
+                            <i data-lucide="puzzle"></i>
+                            <span data-i18n="nav.extensions">Extensions</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('bulk', 'bookmarks')">
+                            <i data-lucide="bookmark"></i>
+                            <span data-i18n="nav.bookmarks">Bookmarks</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="modal-scroll-content" id="bulk-modal-scroll">
+                    <!-- Basic Section -->
+                    <div class="form-section" id="bulk-section-basic">
+                        <h3 class="form-section-title"><i data-lucide="settings"></i> <span data-i18n="form.basic">Basic</span></h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Count (1 - 1000)</label>
+                                <input type="number" id="bulk-count" value="10" min="1" max="1000">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="bulk.namePrefix">Name Prefix</label>
+                                <input type="text" id="bulk-name-prefix" placeholder="Profile" data-i18n-placeholder="form.profileName">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.os">Operating System</label>
+                                <select id="bulk-os">
+                                    <option value="" data-i18n="common.randomize">Random</option>
+                                    <option value="windows">Windows</option>
+                                    <option value="mac">macOS</option>
+                                    <option value="linux">Linux</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.group">Group</label>
+                                <select id="bulk-group">
+                                    <option value="" data-i18n="common.noGroup">No Group</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Proxy Section -->
+                    <div class="form-section" id="bulk-section-proxy">
+                        <h3 class="form-section-title"><i data-lucide="globe"></i> <span data-i18n="form.proxy">Proxy</span></h3>
+                        <div class="form-group">
+                            <label data-i18n="bulk.proxyMode">Proxy Mode</label>
+                            <select id="bulk-proxy-mode">
+                                <option value="none" data-i18n="bulk.proxyNone">No Proxy (Direct)</option>
+                                <option value="round-robin" data-i18n="bulk.proxyRoundRobin">Round Robin (Use all available proxies)</option>
+                                <option value="specific" data-i18n="bulk.proxySpecific">Specific Proxy</option>
+                                <option value="group" data-i18n="bulk.proxyGroup">Proxy Group</option>
+                            </select>
+                        </div>
+                        <div id="bulk-specific-proxy-container" class="form-group" style="display: none;">
+                            <label data-i18n="bulk.proxySpecific">Select Specific Proxy</label>
+                            <select id="bulk-specific-proxy"></select>
+                        </div>
+                        <div id="bulk-proxy-group-container" class="form-group" style="display: none;">
+                            <label data-i18n="bulk.proxyGroup">Select Proxy Group</label>
+                            <select id="bulk-proxy-group"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="bulk-proxy-only-free">
+                                <span data-i18n="bulk.onlyFree">Use only unused proxies</span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="bulk-proxy-allow-reuse" checked>
+                                <span data-i18n="bulk.reuseProxy">Allow proxy reuse in this task</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Fingerprint Section -->
+                    <div class="form-section" id="bulk-section-fingerprint">
+                        <h3 class="form-section-title"><i data-lucide="fingerprint"></i> <span data-i18n="form.fingerprint">Fingerprint</span></h3>
+                        <p class="help-text" style="margin-bottom: 10px;">If "Randomize" is selected, each profile will have unique hardware and media fingerprints. Otherwise, the selected settings will be applied to all created profiles.</p>
+                        <div class="form-group">
+                            <label data-i18n="bulk.fpMode">Fingerprint Mode</label>
+                            <select id="bulk-fp-mode" onchange="document.getElementById('bulk-custom-fp').style.display = this.value === 'frozen' ? 'block' : 'none'">
+                                <option value="random" data-i18n="bulk.fpRandom">Randomize (Recommended)</option>
+                                <option value="frozen" data-i18n="bulk.fpFrozen">Frozen (Apply same settings to all)</option>
+                            </select>
+                        </div>
+                        <div id="bulk-custom-fp" style="display: none;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.screen">Screen Resolution</label>
+                                    <select id="bulk-screen-resolution">
+                                        <option value="1920x1080">1920x1080</option>
+                                        <option value="1536x864">1536x864</option>
+                                        <option value="1440x900">1440x900</option>
+                                        <option value="1366x768">1366x768</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label data-i18n="form.language">Language</label>
+                                    <select id="bulk-language">
+                                        <option value="auto_ip">Auto (Proxy IP)</option>
+                                        <option value="en-US">English</option>
+                                        <option value="ru-RU">Russian</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.cpu">CPU Cores</label>
+                                    <input type="number" id="bulk-cpu-cores" value="8">
+                                </div>
+                                <div class="form-group">
+                                    <label data-i18n="form.memory">Memory (GB)</label>
+                                    <input type="number" id="bulk-device-memory" value="8">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Extensions Section -->
+                    <div class="form-section" id="bulk-section-extensions">
+                        <h3 class="form-section-title"><i data-lucide="puzzle"></i> <span data-i18n="nav.extensions">Extensions</span></h3>
+                        <div id="bulk-extensions-list" class="profile-tab-list"></div>
+                    </div>
+
+                    <!-- Bookmarks Section -->
+                    <div class="form-section" id="bulk-section-bookmarks">
+                        <h3 class="form-section-title"><i data-lucide="bookmark"></i> <span data-i18n="nav.bookmarks">Bookmarks</span></h3>
+                        <div id="bulk-bookmarks-list" class="profile-tab-list"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('bulk-create-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="executeBulkCreate()">
+                    <i data-lucide="plus"></i> Create
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Profile Modal -->
+    <div class="modal" id="create-modal">
+        <div class="modal-backdrop" onclick="closeModal('create-modal')"></div>
+        <div class="modal-content modal-xl">
+            <div class="modal-header">
+                <h2 data-i18n="modal.createProfile">Create New Profile</h2>
+                <button class="modal-close" onclick="closeModal('create-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body-scrollable">
+                <div class="modal-nav-container">
+                    <div class="form-tabs">
+                        <button class="form-tab active" onclick="scrollToSection('create', 'basic')">
+                            <i data-lucide="settings"></i>
+                            <span data-i18n="form.basic">Basic</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('create', 'proxy')">
+                            <i data-lucide="globe"></i>
+                            <span data-i18n="form.proxy">Proxy</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('create', 'fingerprint')">
+                            <i data-lucide="fingerprint"></i>
+                            <span data-i18n="form.fingerprint">Fingerprint</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('create', 'extensions')">
+                            <i data-lucide="puzzle"></i>
+                            <span data-i18n="nav.extensions">Extensions</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('create', 'bookmarks')">
+                            <i data-lucide="bookmark"></i>
+                            <span data-i18n="nav.bookmarks">Bookmarks</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('create', 'advanced')">
+                            <i data-lucide="sliders"></i>
+                            <span data-i18n="form.advanced">Advanced</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="modal-scroll-content" id="create-modal-scroll">
+                    <!-- Basic Section -->
+                    <div class="form-section" id="create-section-basic">
+                        <h3 class="form-section-title"><i data-lucide="settings"></i> <span data-i18n="form.basic">Basic</span></h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.profileName">Profile Name</label>
+                                <input type="text" id="profile-name" placeholder="My Profile" autofocus>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.group">Group</label>
+                                <select id="profile-group">
+                                    <option value="">No Group</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.os">Operating System</label>
+                                <select id="os-type">
+                                    <option value="windows">Windows</option>
+                                    <option value="mac">macOS</option>
+                                    <option value="linux">Linux</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.browser">Browser</label>
+                                <select id="browser-type">
+                                    <option value="chrome">Chrome</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.tags">Tags</label>
+                            <input type="text" id="profile-tags" placeholder="work, testing, main">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.notes">Notes</label>
+                            <textarea id="profile-notes" rows="3" placeholder="Additional notes..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <!-- Proxy Section -->
+                    <div class="form-section" id="create-section-proxy">
+                        <h3 class="form-section-title"><i data-lucide="globe"></i> <span data-i18n="form.proxy">Proxy</span></h3>
+                        <div class="form-group">
+                            <label data-i18n="form.selectProxy">Select Proxy</label>
+                            <div class="input-with-action">
+                                <select id="profile-proxy">
+                                    <option value="">No Proxy (Direct Connection)</option>
+                                </select>
+                                <button class="btn btn-secondary btn-sm" onclick="checkSelectedProxy('create')">
+                                    <i data-lucide="refresh-cw"></i> Check
+                                </button>
+                            </div>
+                        </div>
+                        <div class="proxy-preview" id="proxy-preview"></div>
+                    </div>
+                    
+                    <!-- Fingerprint Section -->
+                    <div class="form-section" id="create-section-fingerprint">
+                        <h3 class="form-section-title"><i data-lucide="fingerprint"></i> <span data-i18n="form.fingerprint">Fingerprint</span></h3>
+                        <div class="fingerprint-options">
+                            <div class="fp-option">
+                                <label>
+                                    <input type="radio" name="fp-mode" value="auto" checked onchange="document.getElementById('custom-fp').style.display = this.checked ? 'none' : 'block'">
+                                    <span data-i18n="form.fpAuto">Auto-generate unique fingerprint</span>
+                                </label>
+                            </div>
+                            <div class="fp-option">
+                                <label>
+                                    <input type="radio" name="fp-mode" value="custom" onchange="document.getElementById('custom-fp').style.display = this.checked ? 'block' : 'none'">
+                                    <span data-i18n="form.fpCustom">Custom fingerprint settings</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="custom-fp-settings" id="custom-fp" style="display: none;">
+                            <div class="toolbar" style="margin-bottom: 15px;">
+                                <button class="btn btn-secondary btn-sm" onclick="randomizeFingerprint('create')">
+                                    <i data-lucide="shuffle"></i> Randomize Fingerprint
+                                </button>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.screen">Screen Resolution</label>
+                                    <select id="screen-resolution">
+                                        <option value="1920x1080">1920x1080 (Full HD)</option>
+                                        <option value="1366x768">1366x768 (HD)</option>
+                                        <option value="1536x864">1536x864 (Laptop)</option>
+                                        <option value="1440x900">1440x900 (Mac-like)</option>
+                                        <option value="1600x900">1600x900</option>
+                                        <option value="1280x720">1280x720</option>
+                                        <option value="1280x800">1280x800</option>
+                                        <option value="2560x1440">2560x1440 (2K)</option>
+                                        <option value="3840x2160">3840x2160 (4K)</option>
+                                        <option value="1680x1050">1680x1050</option>
+                                        <option value="1024x768">1024x768 (Legacy)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label data-i18n="form.language">Language</label>
+                                    <select id="browser-language">
+                                        <option value="auto_ip" data-i18n="form.lang_auto_ip">Language according to proxy country</option>
+                                        <option value="en-US">English (US)</option>
+                                        <option value="en-GB">English (UK)</option>
+                                        <option value="ru-RU">Russian</option>
+                                        <option value="uk-UA">Ukrainian</option>
+                                        <option value="de-DE">German</option>
+                                        <option value="fr-FR">French</option>
+                                        <option value="es-ES">Spanish</option>
+                                        <option value="it-IT">Italian</option>
+                                        <option value="pt-BR">Portuguese (Brazil)</option>
+                                        <option value="zh-CN">Chinese</option>
+                                        <option value="ja-JP">Japanese</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.webrtc">WebRTC</label>
+                                    <select id="webrtc-mode">
+                                        <option value="altered">Altered</option>
+                                        <option value="disabled">Disabled</option>
+                                        <option value="real">Real</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.canvas">Canvas Mode</label>
+                                    <select id="canvas-mode">
+                                        <option value="noise">Noise</option>
+                                        <option value="off">Off</option>
+                                        <option value="real">Real</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label data-i18n="form.audio">Audio Mode</label>
+                                    <select id="audio-mode">
+                                        <option value="noise">Noise</option>
+                                        <option value="off">Off</option>
+                                        <option value="real">Real</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.webgl">WebGL Mode</label>
+                                    <select id="webgl-mode">
+                                        <option value="noise">Noise</option>
+                                        <option value="off">Off</option>
+                                        <option value="real">Real</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label data-i18n="form.clientRects">ClientRects</label>
+                                    <select id="client-rects-mode">
+                                        <option value="noise">Noise</option>
+                                        <option value="off">Off</option>
+                                        <option value="real">Real</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.cpu">CPU Cores</label>
+                                    <select id="cpu-cores">
+                                        <option value="2">2</option>
+                                        <option value="4" selected>4</option>
+                                        <option value="6">6</option>
+                                        <option value="8">8</option>
+                                        <option value="10">10</option>
+                                        <option value="12">12</option>
+                                        <option value="16">16</option>
+                                        <option value="24">24</option>
+                                        <option value="32">32</option>
+                                        <option value="64">64</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label data-i18n="form.memory">Memory (GB)</label>
+                                    <select id="device-memory">
+                                        <option value="2">2</option>
+                                        <option value="4">4</option>
+                                        <option value="6">6</option>
+                                        <option value="8" selected>8</option>
+                                        <option value="12">12</option>
+                                        <option value="16">16</option>
+                                        <option value="24">24</option>
+                                        <option value="32">32</option>
+                                        <option value="64">64</option>
+                                        <option value="128">128</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label data-i18n="form.webglVendor">WebGL Vendor</label>
+                                    <input type="text" id="webgl-vendor" placeholder="Google Inc. (NVIDIA)">
+                                </div>
+                                <div class="form-group">
+                                    <label data-i18n="form.webglRenderer">WebGL Renderer</label>
+                                    <input type="text" id="webgl-renderer" placeholder="ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)">
+                                </div>
+                            </div>
+
+                            <div class="ultra-stealth-options" style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                <h4 style="margin-bottom: 10px; font-size: 13px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
+                                    <i data-lucide="shield-check" style="width:14px; height:14px;"></i> Ultra Stealth Layer
+                                </h4>
+                                <div class="form-row" style="gap: 20px;">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="battery-spoofing" checked>
+                                        <span>Battery API</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="v8-break-iterator" checked>
+                                        <span>v8BreakIterator</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="chrome-spoofing" checked>
+                                        <span>Chrome Object</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="perf-jitter" checked>
+                                        <span>Perf Jitter</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Extensions Section -->
+                    <div class="form-section" id="create-section-extensions">
+                        <h3 class="form-section-title"><i data-lucide="puzzle"></i> <span data-i18n="nav.extensions">Extensions</span></h3>
+                        <p class="help-text" style="margin-bottom: 15px;">Select additional extensions for this profile. Default extensions are always included.</p>
+                        <div id="profile-extensions-list" class="profile-tab-list">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Bookmarks Section -->
+                    <div class="form-section" id="create-section-bookmarks">
+                        <h3 class="form-section-title"><i data-lucide="bookmark"></i> <span data-i18n="nav.bookmarks">Bookmarks</span></h3>
+                        <p class="help-text" style="margin-bottom: 15px;">Select additional bookmarks for this profile. Default bookmarks are always included.</p>
+                        <div id="profile-bookmarks-list" class="profile-tab-list">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
+                    
+                    <!-- Advanced Section -->
+                    <div class="form-section" id="create-section-advanced">
+                        <h3 class="form-section-title"><i data-lucide="sliders"></i> <span data-i18n="form.advanced">Advanced</span></h3>
+                        <div class="form-group">
+                            <label data-i18n="form.startUrls">Start URLs (one per line)</label>
+                            <textarea id="start-urls" rows="3" placeholder="https://example.com"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.launchArgs">Launch Arguments</label>
+                            <input type="text" id="launch-args" placeholder="--disable-gpu">
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="restore-tabs" checked>
+                                <span data-i18n="form.restoreTabs">Restore tabs on startup</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('create-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-success" onclick="createRandomProfile()" data-i18n="profiles.createRandom">Create Random</button>
+                <button class="btn btn-primary" onclick="createProfile()" data-i18n="common.create">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Profile Modal -->
+    <div class="modal" id="edit-modal">
+        <div class="modal-backdrop" onclick="closeModal('edit-modal')"></div>
+        <div class="modal-content modal-xl">
+            <div class="modal-header">
+                <h2 data-i18n="modal.editProfile">Edit Profile</h2>
+                <button class="modal-close" onclick="closeModal('edit-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body-scrollable">
+                <input type="hidden" id="edit-profile-id">
+                <div class="modal-nav-container">
+                    <div class="form-tabs">
+                        <button class="form-tab active" onclick="scrollToSection('edit', 'basic')">
+                            <i data-lucide="settings"></i>
+                            <span data-i18n="form.basic">Basic</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('edit', 'proxy')">
+                            <i data-lucide="globe"></i>
+                            <span data-i18n="form.proxy">Proxy</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('edit', 'fingerprint')">
+                            <i data-lucide="fingerprint"></i>
+                            <span data-i18n="form.fingerprint">Fingerprint</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('edit', 'extensions')">
+                            <i data-lucide="puzzle"></i>
+                            <span data-i18n="nav.extensions">Extensions</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('edit', 'bookmarks')">
+                            <i data-lucide="bookmark"></i>
+                            <span data-i18n="nav.bookmarks">Bookmarks</span>
+                        </button>
+                        <button class="form-tab" onclick="scrollToSection('edit', 'advanced')">
+                            <i data-lucide="sliders"></i>
+                            <span data-i18n="form.advanced">Advanced</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="modal-scroll-content" id="edit-modal-scroll">
+                    <!-- Basic Section -->
+                    <div class="form-section" id="edit-section-basic">
+                        <h3 class="form-section-title"><i data-lucide="settings"></i> <span data-i18n="form.basic">Basic</span></h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.profileName">Profile Name</label>
+                                <input type="text" id="edit-name">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.status">Status</label>
+                                <select id="edit-status">
+                                    <option value="new">New</option>
+                                    <option value="active">Active</option>
+                                    <option value="warning">Warning</option>
+                                    <option value="banned">Banned</option>
+                                    <option value="suspended">Suspended</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.group">Group</label>
+                            <select id="edit-group">
+                                <option value="">No Group</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.tags">Tags</label>
+                            <input type="text" id="edit-tags">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.notes">Notes</label>
+                            <textarea id="edit-notes" rows="3"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Proxy Section -->
+                    <div class="form-section" id="edit-section-proxy">
+                        <h3 class="form-section-title"><i data-lucide="globe"></i> <span data-i18n="form.proxy">Proxy</span></h3>
+                        <div class="form-group">
+                            <label data-i18n="form.proxy">Proxy</label>
+                            <div class="input-with-action">
+                                <select id="edit-proxy"></select>
+                                <button class="btn btn-secondary btn-sm" onclick="checkSelectedProxy('edit')">
+                                    <i data-lucide="refresh-cw"></i> Check
+                                </button>
+                            </div>
+                        </div>
+                        <div class="proxy-preview" id="edit-proxy-preview"></div>
+                    </div>
+
+                    <!-- Fingerprint Section -->
+                    <div class="form-section" id="edit-section-fingerprint">
+                        <h3 class="form-section-title"><i data-lucide="fingerprint"></i> <span data-i18n="form.fingerprint">Fingerprint</span></h3>
+                        <div class="toolbar" style="margin-bottom: 15px;">
+                            <button class="btn btn-secondary btn-sm" onclick="randomizeFingerprint('edit')">
+                                <i data-lucide="shuffle"></i> Randomize Fingerprint
+                            </button>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.screen">Screen Resolution</label>
+                                <select id="edit-screen-resolution">
+                                    <option value="1920x1080">1920x1080 (Full HD)</option>
+                                    <option value="1366x768">1366x768 (HD)</option>
+                                    <option value="1536x864">1536x864 (Laptop)</option>
+                                    <option value="1440x900">1440x900 (Mac-like)</option>
+                                    <option value="1600x900">1600x900</option>
+                                    <option value="1280x720">1280x720</option>
+                                    <option value="1280x800">1280x800</option>
+                                    <option value="2560x1440">2560x1440 (2K)</option>
+                                    <option value="3840x2160">3840x2160 (4K)</option>
+                                    <option value="1680x1050">1680x1050</option>
+                                    <option value="1024x768">1024x768 (Legacy)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.language">Language</label>
+                                <select id="edit-browser-language">
+                                    <option value="auto_ip" data-i18n="form.lang_auto_ip">Language according to proxy country</option>
+                                    <option value="en-US">English (US)</option>
+                                    <option value="en-GB">English (UK)</option>
+                                    <option value="ru-RU">Russian</option>
+                                    <option value="uk-UA">Ukrainian</option>
+                                    <option value="de-DE">German</option>
+                                    <option value="fr-FR">French</option>
+                                    <option value="es-ES">Spanish</option>
+                                    <option value="it-IT">Italian</option>
+                                    <option value="pt-BR">Portuguese (Brazil)</option>
+                                    <option value="zh-CN">Chinese</option>
+                                    <option value="ja-JP">Japanese</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.webrtc">WebRTC</label>
+                                <select id="edit-webrtc-mode">
+                                    <option value="altered">Altered</option>
+                                    <option value="disabled">Disabled</option>
+                                    <option value="real">Real</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.canvas">Canvas Mode</label>
+                                <select id="edit-canvas-mode">
+                                    <option value="noise">Noise</option>
+                                    <option value="off">Off</option>
+                                    <option value="real">Real</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.audio">Audio Mode</label>
+                                <select id="edit-audio-mode">
+                                    <option value="noise">Noise</option>
+                                    <option value="off">Off</option>
+                                    <option value="real">Real</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.webgl">WebGL Mode</label>
+                                <select id="edit-webgl-mode">
+                                    <option value="noise">Noise</option>
+                                    <option value="off">Off</option>
+                                    <option value="real">Real</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.clientRects">ClientRects</label>
+                                <select id="edit-client-rects-mode">
+                                    <option value="noise">Noise</option>
+                                    <option value="off">Off</option>
+                                    <option value="real">Real</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.cpu">CPU Cores</label>
+                                <select id="edit-cpu-cores">
+                                    <option value="2">2</option>
+                                    <option value="4">4</option>
+                                    <option value="6">6</option>
+                                    <option value="8">8</option>
+                                    <option value="10">10</option>
+                                    <option value="12">12</option>
+                                    <option value="16">16</option>
+                                    <option value="24">24</option>
+                                    <option value="32">32</option>
+                                    <option value="64">64</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.memory">Memory (GB)</label>
+                                <select id="edit-device-memory">
+                                    <option value="2">2</option>
+                                    <option value="4">4</option>
+                                    <option value="6">6</option>
+                                    <option value="8">8</option>
+                                    <option value="12">12</option>
+                                    <option value="16">16</option>
+                                    <option value="24">24</option>
+                                    <option value="32">32</option>
+                                    <option value="64">64</option>
+                                    <option value="128">128</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="form.webglVendor">WebGL Vendor</label>
+                                <input type="text" id="edit-webgl-vendor">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="form.webglRenderer">WebGL Renderer</label>
+                                <input type="text" id="edit-webgl-renderer">
+                            </div>
+                        </div>
+
+                        <div class="ultra-stealth-options" style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                            <h4 style="margin-bottom: 10px; font-size: 13px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
+                                <i data-lucide="shield-check" style="width:14px; height:14px;"></i> Ultra Stealth Layer
+                            </h4>
+                            <div class="form-row" style="gap: 20px;">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="edit-battery-spoofing" checked>
+                                    <span>Battery API</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="edit-v8-break-iterator" checked>
+                                    <span>v8BreakIterator</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="edit-chrome-spoofing" checked>
+                                    <span>Chrome Object</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="edit-perf-jitter" checked>
+                                    <span>Perf Jitter</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Extensions Section -->
+                    <div class="form-section" id="edit-section-extensions">
+                        <h3 class="form-section-title"><i data-lucide="puzzle"></i> <span data-i18n="nav.extensions">Extensions</span></h3>
+                        <p class="help-text" style="margin-bottom: 15px;">Select additional extensions for this profile. Default extensions are always included.</p>
+                        <div id="edit-profile-extensions-list" class="profile-tab-list">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Bookmarks Section -->
+                    <div class="form-section" id="edit-section-bookmarks">
+                        <h3 class="form-section-title"><i data-lucide="bookmark"></i> <span data-i18n="nav.bookmarks">Bookmarks</span></h3>
+                        <p class="help-text" style="margin-bottom: 15px;">Select additional bookmarks for this profile. Default bookmarks are always included.</p>
+                        <div id="edit-profile-bookmarks-list" class="profile-tab-list">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Advanced Section -->
+                    <div class="form-section" id="edit-section-advanced">
+                        <h3 class="form-section-title"><i data-lucide="sliders"></i> <span data-i18n="form.advanced">Advanced</span></h3>
+                        <div class="form-group">
+                            <label data-i18n="form.startUrls">Start URLs</label>
+                            <textarea id="edit-start-urls" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.launchArgs">Launch Arguments</label>
+                            <input type="text" id="edit-launch-args">
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="edit-restore-tabs">
+                                <span data-i18n="form.restoreTabs">Restore tabs on startup</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('edit-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="saveProfile()" data-i18n="common.save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="modal" id="import-modal">
+        <div class="modal-backdrop" onclick="closeModal('import-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.import">Import Profiles</h2>
+                <button class="modal-close" onclick="closeModal('import-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="form.format">Format</label>
+                    <select id="import-format">
+                        <option value="auto">Auto-detect</option>
+                        <option value="dolfpower">DolfPower</option>
+                        <option value="adspower">AdsPower</option>
+                        <option value="dolphin">Dolphin Anty</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="form.file">Select File</label>
+                    <div class="file-upload">
+                        <input type="file" id="import-file" accept=".json">
+                        <div class="file-upload-label">
+                            <i data-lucide="upload-cloud"></i>
+                            <span data-i18n="form.dropFile">Drop file here or click to browse</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="import-preview" class="import-preview"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('import-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="importProfiles()" data-i18n="common.import">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal" id="export-modal">
+        <div class="modal-backdrop" onclick="closeModal('export-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.export">Export Profiles</h2>
+                <button class="modal-close" onclick="closeModal('export-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="export-profiles-count" style="margin-bottom: 15px; font-weight: 500;"></p>
+                <div class="form-group">
+                    <label data-i18n="form.format">Export Format</label>
+                    <select id="export-format">
+                        <option value="dolfpower">DolfPower (JSON)</option>
+                        <option value="adspower">AdsPower Compatible</option>
+                        <option value="dolphin">Dolphin Anty Compatible</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('export-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="exportProfiles()" data-i18n="common.export">Export</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Proxy Modal -->
+    <div class="modal" id="proxy-modal">
+        <div class="modal-backdrop" onclick="closeModal('proxy-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.addProxy">Add Proxy</h2>
+                <button class="modal-close" onclick="closeModal('proxy-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="form.proxyName">Proxy Name</label>
+                    <input type="text" id="proxy-name" placeholder="My Proxy">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="form.type">Type</label>
+                        <select id="proxy-type">
+                            <option value="http">HTTP</option>
+                            <option value="https">HTTPS</option>
+                            <option value="socks5">SOCKS5</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.host">Host</label>
+                        <input type="text" id="proxy-host" placeholder="192.168.1.1">
+                    </div>
+                    <div class="form-group" style="max-width: 100px;">
+                        <label data-i18n="form.port">Port</label>
+                        <input type="number" id="proxy-port" placeholder="8080">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="form.username">Username</label>
+                        <input type="text" id="proxy-username">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.password">Password</label>
+                        <input type="password" id="proxy-password">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="form.group">Group</label>
+                    <select id="proxy-group">
+                        <option value="">No Group</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="testProxy()" data-i18n="proxies.test">Test</button>
+                <button class="btn btn-primary" onclick="saveProxy()" data-i18n="common.save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Modal -->
+    <div class="modal" id="group-modal">
+        <div class="modal-backdrop" onclick="closeModal('group-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="group-modal-title" data-i18n="groups.create">Create Group</h2>
+                <button class="modal-close" onclick="closeModal('group-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="group-id">
+                <div class="form-group">
+                    <label data-i18n="table.name">Group Name</label>
+                    <input type="text" id="group-name" placeholder="E-commerce Accounts">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="table.color">Group Color</label>
+                    <input type="color" id="group-color" value="#6366f1">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="table.description">Description</label>
+                    <textarea id="group-description" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('group-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="saveGroup()" data-i18n="common.save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOTP Modal -->
+    <div class="modal" id="totp-modal">
+        <div class="modal-backdrop" onclick="closeModal('totp-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.totp">Two-Factor Authentication (TOTP)</h2>
+                <button class="modal-close" onclick="closeModal('totp-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="totp-profile-id">
+                
+                <div id="totp-list" class="totp-list">
+                    <!-- TOTP items will be loaded here -->
+                </div>
+
+                <div class="divider"></div>
+                
+                <div class="add-totp-section">
+                    <h3 data-i18n="modal.totp">Add New Authenticator</h3>
+                    <div class="form-group">
+                        <label data-i18n="table.name">Name (e.g. Google, Facebook)</label>
+                        <input type="text" id="new-totp-name">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.password">Secret Key (Base32)</label>
+                        <input type="text" id="new-totp-secret" placeholder="JBSWY3DPEHPK3PXP">
+                    </div>
+                    <button class="btn btn-primary btn-block" onclick="addTotpSecret()" data-i18n="common.add">Add Authenticator</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RPA Modal -->
+    <div class="modal" id="rpa-modal">
+        <div class="modal-backdrop" onclick="closeModal('rpa-modal')"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2 data-i18n="modal.rpa">RPA Scenario Builder</h2>
+                <button class="modal-close" onclick="closeModal('rpa-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="form.scenarioName">Scenario Name</label>
+                        <input type="text" id="rpa-name" placeholder="Login and Scrape">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.targetProfile">Target Profile</label>
+                        <select id="rpa-profile">
+                            <option value="" data-i18n="common.noProxy">No Profile (Current)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-tabs">
+                    <button class="form-tab active" onclick="switchRPAMode('visual')">Visual Builder</button>
+                    <button class="form-tab" onclick="switchRPAMode('json')">JSON Editor</button>
+                </div>
+
+                <div id="rpa-visual-editor" class="rpa-visual-editor">
+                    <div class="rpa-sidebar">
+                        <h3 data-i18n="rpa.actions">Add Actions</h3>
+                        <div class="action-buttons">
+                            <select id="new-action-type" class="filter-select" style="width: 100%; margin-bottom: 10px;">
+                                <option value="navigate">Navigate</option>
+                                <option value="click">Click</option>
+                                <option value="hover">Hover</option>
+                                <option value="type">Type</option>
+                                <option value="pressKey">Press Key</option>
+                                <option value="wait">Wait</option>
+                                <option value="scroll">Scroll</option>
+                                <option value="reload">Reload</option>
+                                <option value="back">Go Back</option>
+                                <option value="screenshot">Screenshot</option>
+                                <option value="installExtension" data-i18n="nav.extensions">Install Extension</option>
+                            </select>
+                            <button class="btn btn-secondary btn-block" onclick="addActionBlock()">
+                                <i data-lucide="plus"></i> <span data-i18n="common.add">Add Action</span>
+                            </button>
+                        </div>
+                        <div class="mouse-trail-preview" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                            <h4 style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">Mouse Trail Preview</h4>
+                            <canvas id="mouse-preview-canvas" width="180" height="150" style="background: var(--bg-primary); border-radius: 8px; border: 1px solid var(--border-color); cursor: pointer; width: 100%;" title="Click to see movement demo"></canvas>
+                        </div>
+                    </div>
+                    <div id="action-list" class="action-list-visual">
+                        <!-- Action blocks here -->
+                    </div>
+                </div>
+
+                <div id="rpa-json-editor" class="rpa-json-editor" style="display: none;">
+                    <textarea id="rpa-actions" rows="15" style="font-family: monospace;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('rpa-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="saveScenario()" data-i18n="common.saveScenario">Save Scenario</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Run RPA Modal -->
+    <div class="modal" id="run-rpa-modal">
+        <div class="modal-backdrop" onclick="closeModal('run-rpa-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.runRpa">Run RPA Scenario</h2>
+                <button class="modal-close" onclick="closeModal('run-rpa-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="run-scenario-id">
+                <div class="form-group">
+                    <label data-i18n="form.targetProfile">Select Running Profile</label>
+                    <select id="run-rpa-profile"></select>
+                </div>
+                <p class="help-text" data-i18n="rpa.actions">Scenario will execute in the selected browser window.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('run-rpa-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-success" onclick="executeScenario()" data-i18n="common.runNow">Run Now</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Proxy Modal -->
+    <div class="modal" id="bulk-proxy-modal">
+        <div class="modal-backdrop" onclick="closeModal('bulk-proxy-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.bulkProxy">Bulk Import Proxies</h2>
+                <button class="modal-close" onclick="closeModal('bulk-proxy-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="form.type">Default Protocol</label>
+                    <select id="bulk-proxy-protocol">
+                        <option value="http">HTTP</option>
+                        <option value="https">HTTPS</option>
+                        <option value="socks5">SOCKS5</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="proxies.title">Proxies (one per line)</label>
+                    <p class="help-text">Format: host:port:user:pass or host:port</p>
+                    <textarea id="bulk-proxies-input" rows="10" placeholder="1.2.3.4:8080:user:pass"></textarea>
+                </div>
+                <div id="bulk-proxy-results" class="modal-results-area" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('bulk-proxy-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="importBulkProxies()" data-i18n="common.import">Import Proxies</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extension Modal -->
+    <div class="modal" id="extension-modal">
+        <div class="modal-backdrop" onclick="closeModal('extension-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.addExtension">Add Default Extension</h2>
+                <button class="modal-close" onclick="closeModal('extension-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="form.extensionName">Extension Name</label>
+                    <input type="text" id="extension-name-input" placeholder="uBlock Origin">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="form.extensionPath">Path to Extension Folder or .zip/.crx</label>
+                    <input type="text" id="extension-path-input" placeholder="C:\Extensions\ublock">
+                </div>
+                <div id="extension-modal-results" class="modal-results-area" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('extension-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="saveExtensionRobust()" data-i18n="common.save">Save Extension</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bookmark Modal -->
+    <div class="modal" id="bookmark-modal">
+        <div class="modal-backdrop" onclick="closeModal('bookmark-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.addBookmark">Add Default Bookmark</h2>
+                <button class="modal-close" onclick="closeModal('bookmark-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="form.bookmarkName">Bookmark Name</label>
+                    <input type="text" id="bookmark-name-input" placeholder="Google">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="form.url">URL</label>
+                    <input type="text" id="bookmark-url-input" placeholder="https://google.com">
+                </div>
+                <div id="bookmark-modal-results" class="modal-results-area" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('bookmark-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="saveBookmarkRobust()" data-i18n="common.save">Save Bookmark</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mass Bookmark Modal -->
+    <div class="modal" id="mass-bookmark-modal">
+        <div class="modal-backdrop" onclick="closeModal('mass-bookmark-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="bookmarks.massTitle">Mass Manage Bookmarks</h2>
+                <button class="modal-close" onclick="closeModal('mass-bookmark-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="bookmarks.applyTo">Apply to</label>
+                    <select id="mass-bookmark-target" onchange="toggleMassBookmarkGroup()">
+                        <option value="all" data-i18n="bookmarks.allProfiles">All Profiles</option>
+                        <option value="group" data-i18n="bookmarks.specificGroup">Specific Group</option>
+                    </select>
+                </div>
+                <div class="form-group" id="mass-bookmark-group-container" style="display: none;">
+                    <label data-i18n="form.group">Group</label>
+                    <select id="mass-bookmark-group"></select>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="bookmarks.action">Action</label>
+                    <select id="mass-bookmark-action">
+                        <option value="add" data-i18n="bookmarks.actionAdd">Add to profiles</option>
+                        <option value="remove" data-i18n="bookmarks.actionRemove">Remove from profiles</option>
+                        <option value="clear" data-i18n="bookmarks.actionClear">Clear all bookmarks</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="bookmarks.selectBookmarks">Select Bookmarks</label>
+                    <div id="mass-bookmarks-list" class="profile-tab-list" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px;">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('mass-bookmark-modal')" data-i18n="common.cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="applyMassBookmarks()" data-i18n="common.confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Free Proxy Modal -->
+    <div class="modal" id="free-proxy-modal">
+        <div class="modal-backdrop" onclick="closeModal('free-proxy-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="proxies.free">Free Proxies</h2>
+                <button class="modal-close" onclick="closeModal('free-proxy-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="form.providers">Providers</label>
+                    <div id="free-proxy-sources" class="profile-tab-list" style="max-height: 150px;">
+                        <label class="checkbox-label"><input type="checkbox" value="proxyscrape" checked> <span data-i18n="proxies.source_proxyscrape_http">ProxyScrape HTTP</span></label>
+                        <label class="checkbox-label"><input type="checkbox" value="proxyscrape_socks5" checked> <span data-i18n="proxies.source_proxyscrape_socks5">ProxyScrape SOCKS5</span></label>
+                        <label class="checkbox-label"><input type="checkbox" value="geonode" checked> <span data-i18n="proxies.source_geonode">GeoNode</span></label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="form.maxProxies">Max Proxies</label>
+                        <input type="number" id="free-proxy-max" value="50">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 10px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="free-proxy-test-before" checked>
+                            <span data-i18n="form.testBeforeImport">Test before import</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('free-proxy-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="runFetchFreeProxies()" data-i18n="msg.fetchImport">Fetch & Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chrome Web Store Extension Modal -->
+    <div class="modal" id="chrome-store-modal">
+        <div class="modal-backdrop" onclick="closeModal('chrome-store-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.chromeStore">Add from Chrome Web Store</h2>
+                <button class="modal-close" onclick="closeModal('chrome-store-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label data-i18n="form.chromeStoreUrl">Chrome Web Store Link or Extension ID</label>
+                    <input type="text" id="chrome-store-url" placeholder="https://chromewebstore.google.com/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm">
+                </div>
+                <div id="chrome-store-warning" class="modal-results-area" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning);">
+                    <div style="color: var(--warning); font-weight: bold; margin-bottom: 5px;">⚠️ <span data-i18n="msg.chromeStoreWarningTitle">Security Warning</span></div>
+                    <p data-i18n="msg.chromeStoreWarning">Installing extensions from external sources can be dangerous. We have not verified this extension. Do you want to continue?</p>
+                </div>
+                <div id="chrome-store-loader" style="display: none; text-align: center; margin-top: 15px;">
+                    <div class="loading-spinner"></div>
+                    <p data-i18n="msg.chromeStoreLoading">Downloading and verifying extension...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('chrome-store-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" id="chrome-store-btn" onclick="verifyChromeExtension()" data-i18n="common.add">Add Extension</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal" id="export-modal">
+        <div class="modal-backdrop" onclick="closeModal('export-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="modal.export">Export Profiles</h2>
+                <button class="modal-close" onclick="closeModal('export-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="export-profiles-count">0 profiles selected</p>
+                <div class="form-group">
+                    <label data-i18n="form.format">Format</label>
+                    <select id="export-format">
+                        <option value="json">JSON (Full Backup)</option>
+                        <option value="csv">CSV (Basic Info)</option>
+                        <option value="txt">TXT (Proxy List)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('export-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="exportProfiles()" data-i18n="common.export">Export</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Settings Modal -->
+    <div class="modal" id="jarvis-config-modal">
+        <div class="modal-backdrop" onclick="closeModal('jarvis-config-modal')"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2 data-i18n="jarvis.configTitle">AI Settings</h2>
+                <button class="modal-close" onclick="closeModal('jarvis-config-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="jarvis.provider">AI Provider</label>
+                        <select id="jarvis-provider" onchange="toggleJarvisProviderFields()">
+                            <option value="droidgravity" data-i18n="jarvis.provider.droidgravity">DroidGravity (Default)</option>
+                            <option value="openai" data-i18n="jarvis.provider.openai">OpenAI (BYOK)</option>
+                            <option value="openrouter" data-i18n="jarvis.provider.openrouter">OpenRouter (BYOK)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="jarvis.permissionLevel">Permission Level</label>
+                        <select id="jarvis-permission-level">
+                            <option value="readonly" data-i18n="jarvis.readonly">Read-Only</option>
+                            <option value="standard" data-i18n="jarvis.standard">Standard</option>
+                            <option value="admin" data-i18n="jarvis.admin">Administrator</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group" id="jarvis-api-url-group">
+                    <label data-i18n="jarvis.apiUrl">API URL (Optional)</label>
+                    <input type="text" id="jarvis-api-url" placeholder="http://127.0.0.1:8045">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="jarvis.apiKey">API Key</label>
+                    <input type="password" id="jarvis-api-key" placeholder="Enter API key (stored encrypted)">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="jarvis.modelName">Model Name</label>
+                        <input type="text" id="jarvis-model-name" list="ai-models-list" placeholder="gemini-3-flash">
+                        <datalist id="ai-models-list">
+                            <option value="gemini-3-flash">
+                            <option value="gpt-4o">
+                            <option value="gpt-4o-mini">
+                            <option value="claude-3-5-sonnet">
+                            <option value="anthropic/claude-3.5-sonnet">
+                            <option value="google/gemini-2.0-flash-exp:free">
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="jarvis.masterProfile">Master Profile (for testing scripts)</label>
+                        <select id="jarvis-master-profile">
+                            <option value="">No Profile Selected</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="jarvis.systemPrompt">System Prompt</label>
+                    <textarea id="jarvis-system-prompt" rows="6" placeholder="You are Jarvis..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="jarvis-enabled" checked>
+                        <span data-i18n="jarvis.enabled">Enable Jarvis AI Features</span>
+                    </label>
+                </div>
+                
+                <div class="divider"></div>
+                <h3 style="margin-bottom: 15px; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="send" style="width: 16px; height: 16px; color: #0088cc;"></i>
+                    <span data-i18n="jarvis.tgTitle">Telegram Notifications</span>
+                </h3>
+                <div class="form-group">
+                    <label data-i18n="jarvis.tgToken">Bot Token</label>
+                    <input type="password" id="jarvis-tg-token" placeholder="123456:ABC-DEF...">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="jarvis.tgChatId">Chat ID</label>
+                    <input type="text" id="jarvis-tg-chat-id" placeholder="123456789">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="jarvis.tgWhitelist">White-list IDs (comma separated)</label>
+                    <input type="text" id="jarvis-tg-whitelist" placeholder="-101234843, 2344769...">
+                </div>
+                <div class="form-row" style="gap: 20px;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="jarvis-tg-notify-success" checked>
+                        <span data-i18n="jarvis.tgSuccess">Success</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="jarvis-tg-notify-error" checked>
+                        <span data-i18n="jarvis.tgError">Errors</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="jarvis-tg-notify-summary" checked>
+                        <span data-i18n="jarvis.tgSummary">Summary</span>
+                    </label>
+                </div>
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-secondary btn-sm" onclick="testJarvisTelegram()">
+                        <i data-lucide="send"></i> <span data-i18n="jarvis.tgTest">Test Bot</span>
+                    </button>
+                </div>
+
+                <div class="divider"></div>
+                <div class="form-group">
+                    <label>Zapier / Make Webhook URL</label>
+                    <div class="input-with-action">
+                        <input type="text" id="jarvis-webhook-display" readonly style="font-family: monospace; font-size: 11px; background: var(--bg-tertiary);">
+                        <button class="btn btn-secondary btn-sm" onclick="copyWebhookUrl()">
+                            <i data-lucide="copy"></i>
+                        </button>
+                    </div>
+                    <p class="help-text">Use this URL to trigger DolfPower actions from external services. Key is auto-filled from API Key.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('jarvis-config-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="saveJarvisConfig()" data-i18n="common.save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Jarvis Task Batch Modal -->
+    <div class="modal" id="jarvis-task-modal">
+        <div class="modal-backdrop" onclick="closeModal('jarvis-task-modal')"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2 data-i18n="jarvis.runOnProfiles">Run Task on Profiles</h2>
+                <button class="modal-close" onclick="closeModal('jarvis-task-modal')">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="jarvis-task-script-id">
+                <div class="form-group">
+                    <label data-i18n="table.name">Task Name</label>
+                    <input type="text" id="jarvis-task-name" placeholder="Jarvis Automation">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="form.group">Filter by Group</label>
+                        <select id="jarvis-task-group-select" onchange="selectJarvisTaskGroup(this.value)">
+                            <option value="">All Groups</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="jarvis.schedule">Schedule Execution (Optional)</label>
+                        <input type="datetime-local" id="jarvis-task-schedule">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="jarvis.repeatInterval">Repeat Every (Minutes)</label>
+                    <input type="number" id="jarvis-task-repeat" value="0" min="0" placeholder="0 = no repeat" oninput="toggleSchedulingMode('interval')">
+                    <p class="help-text" data-i18n="jarvis.repeatHint">0 means run once. Example: 1440 for daily.</p>
+                </div>
+                
+                <div class="divider"></div>
+                <h4 style="margin-bottom: 10px; font-size: 13px; color: var(--primary);">
+                    <i data-lucide="calendar"></i> <span data-i18n="jarvis.preciseSchedule">Precise Weekly Schedule</span>
+                </h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label data-i18n="jarvis.dayOfWeek">Day of Week</label>
+                        <select id="jarvis-task-dow" onchange="toggleSchedulingMode('cron')">
+                            <option value="*" data-i18n="jarvis.everyDay">Every Day</option>
+                            <option value="1" data-i18n="time.monday">Monday</option>
+                            <option value="2" data-i18n="time.tuesday">Tuesday</option>
+                            <option value="3" data-i18n="time.wednesday">Wednesday</option>
+                            <option value="4" data-i18n="time.thursday">Thursday</option>
+                            <option value="5" data-i18n="time.friday">Friday</option>
+                            <option value="6" data-i18n="time.saturday">Saturday</option>
+                            <option value="0" data-i18n="time.sunday">Sunday</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="jarvis.preciseTime">Time (HH:MM)</label>
+                        <input type="time" id="jarvis-task-time" onchange="toggleSchedulingMode('cron')">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="table.profiles">Select Profiles</label>
+                    <div id="jarvis-task-profiles-list" class="profile-tab-list" style="max-height: 250px;">
+                        <!-- Loaded via JS -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('jarvis-task-modal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="createJarvisTask()" data-i18n="common.start">Start Task</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="i18n.js"></script>
+    <script src="modal.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

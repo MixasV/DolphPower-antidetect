@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DolfPower - IP Check</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .logo {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+            background: linear-gradient(135deg, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .status.loading {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.5);
+        }
+        .status.success {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.5);
+        }
+        .status.error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.2);
+            border-top-color: #60a5fa;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .ip-display {
+            font-size: 36px;
+            font-weight: bold;
+            color: #60a5fa;
+            margin: 15px 0;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            text-align: left;
+            margin-top: 20px;
+        }
+        .info-item {
+            background: rgba(255,255,255,0.05);
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .info-label {
+            font-size: 11px;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 14px;
+            color: white;
+        }
+        .error-message {
+            font-size: 18px;
+            color: #f87171;
+        }
+        .error-details {
+            font-size: 13px;
+            color: rgba(255,255,255,0.6);
+            margin-top: 10px;
+        }
+        .flag {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .close-btn {
+            margin-top: 25px;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .close-btn:hover {
+            transform: scale(1.05);
+            background: linear-gradient(135deg, #60a5fa, #3b82f6);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🐬</div>
+        <h1>DolfPower</h1>
+        <p class="subtitle">IP & Location Check</p>
+        
+        <div id="status" class="status loading">
+            <div class="spinner"></div>
+            <p>Checking your IP address...</p>
+        </div>
+        
+        <div id="result" style="display: none;"></div>
+        
+        <button class="close-btn" onclick="window.location.href='https://www.google.com'">Continue Browsing</button>
+    </div>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:3001';
+        
+        async function fetchWithTimeout(resource, options = {}) {
+            const { timeout = 10000 } = options;
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+            try {
+                const response = await fetch(resource, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(id);
+                return response;
+            } catch (e) {
+                clearTimeout(id);
+                throw e;
+            }
+        }
+
+        async function checkIP() {
+            const statusEl = document.getElementById('status');
+            const resultEl = document.getElementById('result');
+            const urlParams = new URLSearchParams(window.location.search);
+            const profileId = urlParams.get('profileId');
+            
+            try {
+                // Try multiple IP check services - prioritized by data richness
+                const services = [
+                    { url: 'http://ip-api.com/json/', parse: parseIpApi },
+                    { url: 'https://ipapi.co/json/', parse: parseIpApiCo },
+                    { url: 'https://ip.nf/me.json', parse: (data) => ({ 
+                        ip: data.ip.ip, 
+                        country: data.ip.country, 
+                        countryCode: data.ip.country_code,
+                        city: data.ip.city,
+                        isp: data.ip.asn
+                    }) },
+                    { url: 'https://api.ipify.org?format=json', parse: parseIpify }
+                ];
+                
+                let result = null;
+                
+                for (const service of services) {
+                    try {
+                        console.log('Checking service:', service.url);
+                        const response = await fetchWithTimeout(service.url);
+                        if (response.ok) {
+                            const data = await response.json();
+                            result = service.parse(data);
+                            // Ensure we have at least IP and Country for a "rich" result
+                            if (result && result.ip && result.countryCode) break;
+                        }
+                    } catch (e) {
+                        console.log('Service failed:', service.url, e.message);
+                    }
+                }
+                
+                if (result && result.ip) {
+                    showSuccess(result);
+                    // Update backend with the found IP if profileId is present
+                    if (profileId) {
+                        try {
+                            await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/ip-update`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    ip: result.ip,
+                                    country: result.countryCode || result.country,
+                                    city: result.city
+                                })
+                            });
+                            
+                            // UNLOCK the proxy tunnel for this profile now that IP is confirmed
+                            console.log('Unlocking profile traffic...');
+                            await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
+                        } catch (e) {
+                            console.error('Failed to update IP or unlock on backend:', e);
+                        }
+                    }
+                } else {
+                    // Final attempt via our own API (which uses axios on server side, more reliable)
+                    try {
+                        const response = await fetch(`${API_URL}/v1.0/ip/check${profileId ? '?profileId=' + profileId : ''}`);
+                        const data = await response.json();
+                        if (data.success && data.data && data.data.info) {
+                            showSuccess(data.data.info);
+                            if (profileId) {
+                                await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
+                            }
+                            return;
+                        }
+                    } catch (e) {}
+                    showError('Could not determine IP address', 'All IP check services failed. Your proxy may not be working correctly.');
+                    
+                    // Even on error, we might want to unlock after some time or manual confirmation
+                    // But for security, let's keep it blocked if IP can't be verified?
+                    // User might be stuck. Let's add an unlock to the error state too just in case.
+                }
+            } catch (error) {
+                showError('Connection Error', error.message || 'Failed to check IP. Proxy may be offline or misconfigured.');
+            }
+        }
+        
+        function parseIpApi(data) {
+            if (data.status === 'fail') return null;
+            return {
+                ip: data.query,
+                country: data.country,
+                countryCode: data.countryCode,
+                city: data.city,
+                region: data.regionName || data.region,
+                timezone: data.timezone,
+                isp: data.isp,
+                org: data.org
+            };
+        }
+        
+        function parseIpApiCo(data) {
+            if (data.error) return null;
+            return {
+                ip: data.ip,
+                country: data.country_name,
+                countryCode: data.country_code,
+                city: data.city,
+                region: data.region,
+                timezone: data.timezone,
+                isp: data.org,
+                org: data.org
+            };
+        }
+        
+        function parseIpify(data) {
+            return { ip: data.ip };
+        }
+        
+        function getCountryFlag(countryCode) {
+            if (!countryCode || countryCode.length !== 2) return '🌍';
+            const codePoints = countryCode
+                .toUpperCase()
+                .split('')
+                .map(char => 127397 + char.charCodeAt(0));
+            return String.fromCodePoint(...codePoints);
+        }
+        
+        function showSuccess(info) {
+            const statusEl = document.getElementById('status');
+            const resultEl = document.getElementById('result');
+            
+            statusEl.className = 'status success';
+            statusEl.innerHTML = `
+                <div class="flag">${getCountryFlag(info.countryCode)}</div>
+                <p style="color: #34d399; font-size: 14px;">Proxy Connected Successfully</p>
+                <div class="ip-display">${info.ip}</div>
+            `;
+            
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = `
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Country</div>
+                        <div class="info-value">${info.country || 'Unknown'}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">City</div>
+                        <div class="info-value">${info.city || 'Unknown'}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Region</div>
+                        <div class="info-value">${info.region || 'Unknown'}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Timezone</div>
+                        <div class="info-value">${info.timezone || 'Unknown'}</div>
+                    </div>
+                    <div class="info-item" style="grid-column: 1 / -1;">
+                        <div class="info-label">ISP / Organization</div>
+                        <div class="info-value">${info.isp || info.org || 'Unknown'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function showError(title, details) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = 'status error';
+            statusEl.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
+                <div class="error-message">${title}</div>
+                <div class="error-details">${details}</div>
+            `;
+        }
+        
+        // Start check on load
+        checkIP();
+    </script>
+</body>
+</html>

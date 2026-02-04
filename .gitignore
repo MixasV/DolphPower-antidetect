@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+*.db
+.antidetect/
+coverage/
+.vscode/
+.idea/
+.docs/
+.screens/
+.tests/

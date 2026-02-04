@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Bulk Create</title>
+</head>
+
+<body>
+    <h1>Test Bulk Create</h1>
+    <button onclick="testBulkCreate()">Test Bulk Create (3 profiles)</button>
+    <button onclick="testSingleCreate()">Test Single Create</button>
+    <pre id="result"></pre>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:3001';
+
+        async function testSingleCreate() {
+            const result = document.getElementById('result');
+            result.textContent = 'Testing single create...';
+
+            try {
+                const response = await fetch(`${API_URL}/v1.0/browser_profiles/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: 'Test Single Profile',
+                        template: 'windows_chrome'
+                    })
+                });
+
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+                console.log('Single create response:', data);
+            } catch (error) {
+                result.textContent = 'Error: ' + error.message;
+                console.error('Single create error:', error);
+            }
+        }
+
+        async function testBulkCreate() {
+            const result = document.getElementById('result');
+            result.textContent = 'Testing bulk create...';
+
+            try {
+                const requestBody = {
+                    count: 3,
+                    name_prefix: 'TestBulk',
+                    template: 'windows_chrome'
+                };
+
+                console.log('Request body:', requestBody);
+
+                const response = await fetch(`${API_URL}/v1.0/browser_profiles/bulk/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+
+                const data = await response.json();
+                result.textContent = JSON.stringify(data, null, 2);
+                console.log('Bulk create response:', data);
+            } catch (error) {
+                result.textContent = 'Error: ' + error.message;
+                console.error('Bulk create error:', error);
+            }
+        }
+    </script>
+</body>
+
+</html>

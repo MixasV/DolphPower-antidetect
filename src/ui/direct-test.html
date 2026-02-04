@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Direct API Test</title>
+</head>
+
+<body>
+    <h1>Direct API Test - No Cache</h1>
+    <p>Timestamp: <span id="timestamp"></span></p>
+    <button onclick="testAPI()">Test Bulk Create API</button>
+    <pre id="output"></pre>
+
+    <script>
+        // Show timestamp to verify no cache
+        document.getElementById('timestamp').textContent = new Date().toISOString();
+
+        async function testAPI() {
+            const output = document.getElementById('output');
+            output.textContent = 'Testing...';
+
+            const requestData = {
+                count: 3,
+                name_prefix: 'DirectTest',
+                template: 'windows_chrome'
+            };
+
+            console.log('=== REQUEST ===');
+            console.log('URL:', 'http://127.0.0.1:3001/v1.0/browser_profiles/bulk/create');
+            console.log('Method:', 'POST');
+            console.log('Headers:', { 'Content-Type': 'application/json' });
+            console.log('Body object:', requestData);
+            console.log('Body JSON:', JSON.stringify(requestData));
+            console.log('Body JSON length:', JSON.stringify(requestData).length);
+
+            try {
+                const response = await fetch('http://127.0.0.1:3001/v1.0/browser_profiles/bulk/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                console.log('=== RESPONSE ===');
+                console.log('Status:', response.status);
+                console.log('Status Text:', response.statusText);
+                console.log('Headers:', [...response.headers.entries()]);
+
+                const responseText = await response.text();
+                console.log('Response Text:', responseText);
+
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                    console.log('Response JSON:', data);
+                } catch (e) {
+                    console.error('Failed to parse response as JSON:', e);
+                    data = { error: 'Invalid JSON response', raw: responseText };
+                }
+
+                output.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                console.error('=== ERROR ===');
+                console.error(error);
+                output.textContent = 'Error: ' + error.message + '\n\nCheck console for details';
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,554 @@
+<!-- Profile Editor Modal -->
+<div class="modal-overlay" id="edit-modal">
+    <div class="modal-container">
+        <!-- Header -->
+        <div class="modal-header">
+            <h2><span data-i18n="modal.editProfile">Edit Profile</span>: <span id="modal-profile-name">Loading...</span></h2>
+            <button class="modal-close" onclick="closeEditModal()">×</button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="modal-tabs">
+            <div class="modal-tab active" onclick="switchModalTab('basic')">📋 <span data-i18n="form.basic">Basic</span></div>
+            <div class="modal-tab" onclick="switchModalTab('proxy')">🌐 <span data-i18n="form.proxy">Proxy</span></div>
+            <div class="modal-tab" onclick="switchModalTab('platform')">💻 <span data-i18n="form.platform">Platform</span></div>
+            <div class="modal-tab" onclick="switchModalTab('fingerprint')">🔒 <span data-i18n="form.fingerprint">Fingerprint</span></div>
+            <div class="modal-tab" onclick="switchModalTab('advanced')">⚙️ <span data-i18n="form.advanced">Advanced</span></div>
+        </div>
+
+        <!-- Body -->
+        <div class="modal-body">
+            <!-- Basic Tab -->
+            <div class="modal-tab-content active" id="modal-tab-basic">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label data-i18n="form.profileName">Profile Name *</label>
+                        <input type="text" id="edit-profile-name" placeholder="My Profile" data-i18n-placeholder="form.profileName">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.browserTemplate">Browser Template</label>
+                        <select id="edit-template">
+                            <option value="windows_chrome">Windows 10 - Chrome 120</option>
+                            <option value="mac_chrome">macOS 14 - Chrome 120</option>
+                            <option value="linux_chrome">Linux - Chrome 120</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.browser">Browser Type</label>
+                        <select id="edit-browser-type">
+                            <option value="chrome">Chrome</option>
+                            <option value="firefox">Firefox</option>
+                            <option value="edge">Edge</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="profiles.table_browser_version">Browser Version</label>
+                        <input type="text" id="edit-browser-version" value="120.0.6099.130">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.os">OS Type</label>
+                        <select id="edit-os-type">
+                            <option value="windows">Windows</option>
+                            <option value="mac">macOS</option>
+                            <option value="linux">Linux</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.osVersion">OS Version</label>
+                        <input type="text" id="edit-os-version" value="10">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.groupId">Group ID</label>
+                        <input type="text" id="edit-group-id" placeholder="my-group" data-i18n-placeholder="form.groupId">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.tags">Tags</label>
+                        <input type="text" id="edit-tags" placeholder="work, testing" data-i18n-placeholder="form.tags">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="form.notes">Notes</label>
+                    <textarea id="edit-notes" rows="4" placeholder="Additional notes..." data-i18n-placeholder="form.notes"></textarea>
+                </div>
+            </div>
+
+            <!-- Proxy Tab -->
+            <div class="modal-tab-content" id="modal-tab-proxy">
+                <div class="form-group">
+                    <label data-i18n="form.proxy">Proxy</label>
+                    <select id="edit-proxy">
+                        <option value="" data-i18n="common.noProxy">No Proxy</option>
+                    </select>
+                </div>
+                <div class="info-badge" data-i18n="form.proxyApplyHint">Proxy settings will be applied on next browser start</div>
+            </div>
+
+            <!-- Platform Tab -->
+            <div class="modal-tab-content" id="modal-tab-platform">
+                <div class="fingerprint-section">
+                    <h4 data-i18n="profiles.user_agent">User Agent</h4>
+                    <div class="form-group">
+                        <label data-i18n="profiles.user_agent">User Agent String</label>
+                        <textarea id="edit-user-agent" rows="3"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label data-i18n="form.platform">Platform</label>
+                            <input type="text" id="edit-platform" placeholder="Win32">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="profiles.platform_version">Platform Version</label>
+                            <input type="text" id="edit-platform-version" placeholder="10.0.0">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.screenDisplay">Screen & Display</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label data-i18n="form.screen">Width</label>
+                            <input type="number" id="edit-screen-width" value="1920">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.screen">Height</label>
+                            <input type="number" id="edit-screen-height" value="1080">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label data-i18n="form.screen">Color Depth</label>
+                            <input type="number" id="edit-color-depth" value="24">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.screen">Pixel Ratio</label>
+                            <input type="number" step="0.1" id="edit-pixel-ratio" value="1.0">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.localization">Localization</h4>
+                    <div class="form-group">
+                        <label data-i18n="form.language">Language</label>
+                        <input type="text" id="edit-language" placeholder="en-US">
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.language">Languages (comma-separated)</label>
+                        <input type="text" id="edit-languages" placeholder="en-US, en">
+                    </div>
+                </div>
+
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.geolocation">Geolocation</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label data-i18n="form.geolocation">Latitude</label>
+                            <input type="number" step="0.000001" id="edit-geo-lat" placeholder="40.7128">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.geolocation">Longitude</label>
+                            <input type="number" step="0.000001" id="edit-geo-lon" placeholder="-74.0060">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.accuracy">Accuracy (meters)</label>
+                        <input type="number" id="edit-geo-accuracy" value="100">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fingerprint Tab -->
+            <div class="modal-tab-content" id="modal-tab-fingerprint">
+                <!-- Canvas -->
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.canvasFp">🎨 Canvas Fingerprinting</h4>
+                    <div class="mode-selector">
+                        <div class="mode-option" data-mode="off" onclick="selectMode('canvas', 'off')" data-i18n="common.off">Off</div>
+                        <div class="mode-option active" data-mode="noise" onclick="selectMode('canvas', 'noise')" data-i18n="common.noise">Noise
+                        </div>
+                        <div class="mode-option" data-mode="block" onclick="selectMode('canvas', 'block')" data-i18n="common.off">Block</div>
+                    </div>
+                    <div class="slider-container" id="canvas-noise-container">
+                        <label>
+                            <span data-i18n="form.noiseLevel">Noise Level</span>
+                            <span id="canvas-noise-value">50</span>
+                        </label>
+                        <input type="range" class="slider" id="edit-canvas-noise" min="0" max="100" value="50"
+                            oninput="document.getElementById('canvas-noise-value').textContent = this.value">
+                    </div>
+                </div>
+
+                <!-- WebGL -->
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.webglFp">🎮 WebGL Fingerprinting</h4>
+                    <div class="mode-selector">
+                        <div class="mode-option" data-mode="off" onclick="selectMode('webgl', 'off')" data-i18n="common.off">Off</div>
+                        <div class="mode-option active" data-mode="noise" onclick="selectMode('webgl', 'noise')" data-i18n="common.noise">Noise
+                        </div>
+                        <div class="mode-option" data-mode="block" onclick="selectMode('webgl', 'block')" data-i18n="common.off">Block</div>
+                        <div class="mode-option" data-mode="custom" onclick="selectMode('webgl', 'custom')" data-i18n="common.custom">Custom</div>
+                    </div>
+                    <div id="webgl-custom-container">
+                        <div class="form-group">
+                            <label data-i18n="form.webglVendor">Vendor</label>
+                            <select id="edit-webgl-vendor">
+                                <option value="Google Inc. (Intel)">Google Inc. (Intel)</option>
+                                <option value="Google Inc. (NVIDIA)">Google Inc. (NVIDIA)</option>
+                                <option value="Google Inc. (AMD)">Google Inc. (AMD)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.webglRenderer">Renderer</label>
+                            <select id="edit-webgl-renderer">
+                                <option value="ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)">Intel
+                                    UHD 630</option>
+                                <option value="ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER Direct3D11 vs_5_0 ps_5_0)">
+                                    NVIDIA GTX 1660 SUPER</option>
+                                <option value="ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)">AMD RX 580
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audio -->
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.audioContext">🔊 Audio Context</h4>
+                    <div class="mode-selector">
+                        <div class="mode-option" data-mode="off" onclick="selectMode('audio', 'off')" data-i18n="common.off">Off</div>
+                        <div class="mode-option active" data-mode="noise" onclick="selectMode('audio', 'noise')" data-i18n="common.noise">Noise
+                        </div>
+                    </div>
+                    <div class="slider-container" id="audio-noise-container">
+                        <label>
+                            <span data-i18n="form.noiseLevel">Noise Level</span>
+                            <span id="audio-noise-value">50</span>
+                        </label>
+                        <input type="range" class="slider" id="edit-audio-noise" min="0" max="100" value="50"
+                            oninput="document.getElementById('audio-noise-value').textContent = this.value">
+                    </div>
+                </div>
+
+                <!-- WebRTC -->
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.webrtc">📡 WebRTC</h4>
+                    <div class="mode-selector">
+                        <div class="mode-option active" data-mode="disabled" onclick="selectMode('webrtc', 'disabled')" data-i18n="common.off">
+                            Disabled</div>
+                        <div class="mode-option" data-mode="fake" onclick="selectMode('webrtc', 'fake')" data-i18n="common.noise">Fake</div>
+                        <div class="mode-option" data-mode="real" onclick="selectMode('webrtc', 'real')" data-i18n="common.real">Real</div>
+                    </div>
+                    <div id="webrtc-ip-container" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Public IP</label>
+                                <input type="text" id="edit-webrtc-public-ip" placeholder="8.8.8.8">
+                            </div>
+                            <div class="form-group">
+                                <label>Local IP</label>
+                                <input type="text" id="edit-webrtc-local-ip" placeholder="192.168.1.1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ClientRects -->
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.clientRectsFp">📐 ClientRects</h4>
+                    <div class="mode-selector">
+                        <div class="mode-option active" data-mode="off" onclick="selectMode('clientrects', 'off')" data-i18n="common.off">Off
+                        </div>
+                        <div class="mode-option" data-mode="noise" onclick="selectMode('clientrects', 'noise')" data-i18n="common.noise">Noise
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Tab -->
+            <div class="modal-tab-content" id="modal-tab-advanced">
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.hardware">Hardware</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label data-i18n="form.cpu">Hardware Concurrency (CPU cores)</label>
+                            <input type="number" id="edit-hardware-concurrency" value="8" min="1" max="32">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.memory">Device Memory (GB)</label>
+                            <input type="number" id="edit-device-memory" value="8" min="1" max="64">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Max Touch Points</label>
+                        <input type="number" id="edit-max-touch-points" value="0" min="0" max="10">
+                    </div>
+                </div>
+
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.mediaDevices">Media Devices</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label data-i18n="form.audioInputs">Audio Inputs</label>
+                            <input type="number" id="edit-audio-inputs" value="1" min="0" max="10">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="form.audioOutputs">Audio Outputs</label>
+                            <input type="number" id="edit-audio-outputs" value="2" min="0" max="10">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.videoInputs">Video Inputs</label>
+                        <input type="number" id="edit-video-inputs" value="1" min="0" max="10">
+                    </div>
+                </div>
+
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.ultraStealth">Ultra Stealth Layer</h4>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; justify-content: space-between;">
+                            <span data-i18n="form.batterySpoofing">Battery API Spoofing</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="edit-battery-spoofing" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; justify-content: space-between;">
+                            <span data-i18n="form.v8BreakIterator">v8BreakIterator Protection</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="edit-v8-break-iterator" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; justify-content: space-between;">
+                            <span data-i18n="form.chromeObject">Chrome Object Spoofing</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="edit-chrome-object" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px; justify-content: space-between;">
+                            <span data-i18n="form.perfJitter">Performance Timing Jitter</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="edit-perf-jitter" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="fingerprint-section">
+                    <h4 data-i18n="form.privacy">Privacy</h4>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <span data-i18n="form.doNotTrack">Do Not Track</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="edit-do-not-track">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeEditModal()" data-i18n="common.cancel">Cancel</button>
+            <button class="btn-success" onclick="saveProfileChanges()" data-i18n="common.save">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Jarvis Config Modal -->
+<div class="modal" id="jarvis-config-modal">
+    <div class="modal-backdrop" onclick="closeModal('jarvis-config-modal')"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 data-i18n="jarvis.configTitle">Jarvis Configuration</h2>
+            <button class="modal-close" onclick="closeModal('jarvis-config-modal')">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label data-i18n="jarvis.apiUrl">API URL (DroidGravity Manager)</label>
+                <input type="text" id="jarvis-api-url" placeholder="http://127.0.0.1:8045">
+            </div>
+            <div class="form-group">
+                <label data-i18n="jarvis.apiKey">API Key (Optional)</label>
+                <input type="password" id="jarvis-api-key" placeholder="••••••••">
+            </div>
+            <div class="form-group">
+                <label data-i18n="jarvis.modelName">Model Name</label>
+                <select id="jarvis-model-name">
+                    <option value="gemini-3-flash">Gemini 3 Flash (Recommended)</option>
+                    <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                    <option value="openai/gpt-4o">GPT-4o (OpenRouter)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Permission Level</label>
+                <select id="jarvis-permission-level">
+                    <option value="readonly">Read-Only (View data only)</option>
+                    <option value="standard" selected>Standard (Manage profiles, no deletion)</option>
+                    <option value="admin">Administrator (Full control)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label data-i18n="jarvis.masterProfile">Master Profile (for testing scripts)</label>
+                <select id="jarvis-master-profile">
+                    <option value="" data-i18n="common.noProfile">No Profile Selected</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label data-i18n="jarvis.systemPrompt">Additional AI Instructions</label>
+                <textarea id="jarvis-system-prompt" rows="3" placeholder="Extra instructions to be added to the base system prompt..." data-i18n-placeholder="jarvis.systemPromptHint"></textarea>
+            </div>
+            <div class="form-group">
+                <label>MCP Servers (One per line)</label>
+                <textarea id="jarvis-mcp-servers" rows="2" placeholder="http://localhost:3000/mcp"></textarea>
+            </div>
+            <div class="divider"></div>
+            <h3 data-i18n="jarvis.tgTitle" style="font-size: 14px; margin-bottom: 10px;">Telegram Settings</h3>
+            <div class="form-group">
+                <label data-i18n="jarvis.tgToken">Bot Token</label>
+                <input type="password" id="jarvis-tg-token" placeholder="123456:ABC-DEF...">
+            </div>
+            <div class="form-group">
+                <label data-i18n="jarvis.tgChatId">Chat ID</label>
+                <input type="text" id="jarvis-tg-chat-id" placeholder="Your Chat ID">
+            </div>
+            <div class="form-group">
+                <label data-i18n="jarvis.tgWhitelist">White-list IDs (comma separated)</label>
+                <input type="text" id="jarvis-tg-whitelist" placeholder="12345, 67890">
+                <small class="help-text warning-text" id="tg-whitelist-warning" style="color: var(--warning); display: none;">
+                    <i data-lucide="alert-triangle" style="width: 12px; height: 12px;"></i>
+                    Attention: If whitelist is empty, any user can receive notifications!
+                </small>
+            </div>
+            <div class="form-group">
+                <label>Bot Permissions</label>
+                <select id="jarvis-tg-mode" onchange="toggleTgSecurityFields()">
+                    <option value="notify">Notifications Only</option>
+                    <option value="full">Notifications & Commands</option>
+                </select>
+            </div>
+            <div id="tg-security-fields" style="display: none; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 15px;">
+                <div class="form-group">
+                    <label>Allowed Tools via Telegram</label>
+                    <div id="tg-tools-list" class="checkbox-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; max-height: 120px; overflow-y: auto; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                        <!-- Populated via JS -->
+                    </div>
+                    <small class="help-text">Only checked tools can be executed via Telegram.</small>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="jarvis-tg-requires-2fa" checked>
+                        <span>Require 2FA for active commands</span>
+                    </label>
+                </div>
+            </div>
+            <div class="form-row" style="margin-top: 10px;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="jarvis-tg-notify-success" checked>
+                    <span data-i18n="jarvis.tgSuccess">Success</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="jarvis-tg-notify-error" checked>
+                    <span data-i18n="jarvis.tgError">Errors</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="jarvis-tg-notify-summary" checked>
+                    <span data-i18n="jarvis.tgSummary">Summary</span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="jarvis-enabled" checked>
+                    <span data-i18n="jarvis.enabled">Enable Jarvis AI Features</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('jarvis-config-modal')" data-i18n="common.cancel">Cancel</button>
+            <button class="btn btn-primary" onclick="saveJarvisConfig()" data-i18n="common.save">Save Config</button>
+        </div>
+    </div>
+</div>
+
+<!-- Jarvis Task Modal -->
+<div class="modal" id="jarvis-task-modal">
+    <div class="modal-backdrop" onclick="closeModal('jarvis-task-modal')"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 data-i18n="jarvis.runOnProfiles">Run Task on Profiles</h2>
+            <button class="modal-close" onclick="closeModal('jarvis-task-modal')">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="jarvis-task-script-id">
+            <div class="form-group">
+                <label data-i18n="form.scenarioName">Task Name</label>
+                <input type="text" id="jarvis-task-name" placeholder="Jarvis Task" data-i18n-placeholder="jarvis.history">
+            </div>
+            <div class="form-group">
+                <label data-i18n="jarvis.schedule">Schedule Execution (Optional)</label>
+                <input type="datetime-local" id="jarvis-task-schedule">
+                <small class="help-text" data-i18n="jarvis.scheduleHint">Leave empty to start immediately</small>
+            </div>
+            <div class="form-group">
+                <label data-i18n="form.targetProfile">Target Profiles</label>
+                <div class="toolbar" style="margin-bottom: 10px;">
+                    <select id="jarvis-task-group-select" class="filter-select" onchange="selectJarvisTaskGroup(this.value)">
+                        <option value="" data-i18n="common.selectGroup">Select Group...</option>
+                    </select>
+                </div>
+                <div id="jarvis-task-profiles-list" class="profile-tab-list">
+                    <!-- Profiles list with checkboxes -->
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('jarvis-task-modal')" data-i18n="common.cancel">Cancel</button>
+            <button class="btn btn-primary" onclick="createJarvisTask()">
+                <i data-lucide="play"></i> <span data-i18n="common.runNow">Start Task</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Jarvis Task Logs Modal -->
+<div class="modal" id="jarvis-task-logs-modal">
+    <div class="modal-backdrop" onclick="closeModal('jarvis-task-logs-modal')"></div>
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h2 id="jarvis-logs-title">Task Logs</h2>
+            <button class="modal-close" onclick="closeModal('jarvis-task-logs-modal')">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div id="jarvis-task-logs-container" class="jarvis-script-card" style="height: 400px; max-height: none;">
+                <!-- Logs will be loaded here -->
+                <div class="loading-state" style="display: flex; align-items: center; justify-content: center; height: 100%; gap: 10px; color: var(--text-muted);">
+                    <i data-lucide="loader" class="spin"></i> Loading logs...
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('jarvis-task-logs-modal')" data-i18n="common.cancel">Close</button>
+            <button class="btn btn-primary" onclick="refreshCurrentTaskLogs()">
+                <i data-lucide="refresh-cw"></i> Refresh
+            </button>
+        </div>
+    </div>
+</div>
+
