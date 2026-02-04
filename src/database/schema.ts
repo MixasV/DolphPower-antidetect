@@ -320,6 +320,7 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           // Migration: Add columns if they don't exist
           db.run(`ALTER TABLE jarvis_config ADD COLUMN provider TEXT DEFAULT 'droidgravity'`, () => {});
           db.run(`ALTER TABLE jarvis_config ADD COLUMN permission_level TEXT DEFAULT 'standard'`, () => {});
+          db.run(`ALTER TABLE jarvis_config ADD COLUMN master_profile_id TEXT`, () => {});
 
           // Jarvis Chat Sessions (Encrypted)
           db.run(`

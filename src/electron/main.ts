@@ -176,3 +176,27 @@ ipcMain.handle('select-file', async () => {
     }
     return null;
 });
+
+ipcMain.handle('save-temp-image', async (event, base64Data) => {
+    try {
+        const fs = require('fs');
+        const os = require('os');
+        const path = require('path');
+        const { v4: uuidv4 } = require('uuid');
+
+        const buffer = Buffer.from(base64Data.split(',')[1], 'base64');
+        const tempDir = path.join(os.tmpdir(), 'dolfpower_screenshots');
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        const fileName = `screenshot_${Date.now()}_${uuidv4().substring(0, 8)}.png`;
+        const filePath = path.join(tempDir, fileName);
+        
+        fs.writeFileSync(filePath, buffer);
+        return filePath;
+    } catch (e) {
+        console.error('Failed to save temp image:', e);
+        return null;
+    }
+});

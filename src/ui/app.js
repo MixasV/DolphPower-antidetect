@@ -3634,6 +3634,25 @@ async function refreshCurrentTaskLogs() {
     }
 }
 
+async function deleteJarvisSession(id) {
+    if (!confirm(t('jarvis.confirmDeleteSession') || 'Delete this chat?')) return;
+    try {
+        const response = await fetch(`${API_URL}/v1.0/jarvis/sessions/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            if (currentJarvisSessionId === id) {
+                currentJarvisSessionId = null;
+                jarvisHistory = [];
+                jarvisAttachedFiles = [];
+                document.getElementById('jarvis-messages').innerHTML = '';
+            }
+            showToast(t('jarvis.sessionDeleted') || 'Chat deleted', 'success');
+            loadJarvisHistory();
+        }
+    } catch (e) {
+        showToast('Failed to delete session', 'error');
+    }
+}
+
 async function createJarvisSession() {
     try {
         const response = await fetch(`${API_URL}/v1.0/jarvis/sessions`, {
@@ -3696,33 +3715,39 @@ document.addEventListener('DOMContentLoaded', () => {
     if (jarvisInput) {
         jarvisInput.addEventListener('paste', async (event) => {
             const items = (event.clipboardData || event.originalEvent.clipboardData).items;
-            let imageCount = 0;
+            const images = [];
             
             for (const item of items) {
                 if (item.type.indexOf('image') !== -1) {
-                    if (jarvisAttachedFiles.length >= 3) {
-                        showToast(t('jarvis.maxScreenshots') || 'Max 3 screenshots allowed', 'warning');
-                        return;
-                    }
+                    images.push(item.getAsFile());
+                }
+            }
 
-                    const blob = item.getAsFile();
-                    const reader = new FileReader();
-                    reader.onload = async (e) => {
-                        const base64Data = e.target.result;
-                        // Save to temporary file via Electron
-                        try {
-                            const filePath = await window.electron.saveTempImage(base64Data);
-                            if (filePath) {
-                                jarvisAttachedFiles.push(filePath);
-                                await updateSessionFiles();
-                                renderAttachedFiles();
-                            }
-                        } catch (err) {
-                            console.error('Failed to save pasted image:', err);
-                        }
-                    };
-                    reader.readAsDataURL(blob);
-                    imageCount++;
+            if (images.length === 0) return;
+
+            // Process images sequentially to avoid race conditions
+            for (const blob of images) {
+                if (jarvisAttachedFiles.length >= 3) {
+                    showToast(t('jarvis.maxScreenshots') || 'Max 3 screenshots allowed', 'warning');
+                    break;
+                }
+
+                try {
+                    const base64Data = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.onerror = (e) => reject(e);
+                        reader.readAsDataURL(blob);
+                    });
+
+                    const filePath = await window.electron.saveTempImage(base64Data);
+                    if (filePath) {
+                        jarvisAttachedFiles.push(filePath);
+                        await updateSessionFiles();
+                        renderAttachedFiles();
+                    }
+                } catch (err) {
+                    console.error('Failed to process pasted image:', err);
                 }
             }
         });
@@ -3776,25 +3801,39 @@ function renderAttachedFiles() {
     container.style.display = 'block';
     if (sidebarContainer) sidebarContainer.style.display = 'block';
 
-    const filesHtml = jarvisAttachedFiles.map(file => `
-        <div class="jarvis-file-pill">
-            <i data-lucide="file-text"></i>
-            <span title="${file}">${file.split(/[\\/]/).pop()}</span>
-            <i data-lucide="x" class="btn-remove-file" onclick="removeAttachedFile('${file.replace(/\\/g, '\\\\')}')"></i>
-        </div>
-    `).join('');
-
-    list.innerHTML = filesHtml;
-    if (sidebarList) {
-        sidebarList.innerHTML = jarvisAttachedFiles.map(file => `
-            <div class="jarvis-file-pill" style="justify-content: space-between; width: 100%; margin-bottom: 4px;">
-                <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
-                    <i data-lucide="file-text"></i>
-                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px;" title="${file}">${file.split(/[\\/]/).pop()}</span>
+    const renderFile = (file, isSidebar = false) => {
+        const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(file);
+        const fileName = file.split(/[\\/]/).pop();
+        
+        // Use file:// protocol for local images if possible, or a placeholder
+        // In Electron with contextIsolation, we might need to use a custom protocol or handle it in main
+        // For now, let's use a thumbnail class
+        const icon = isImage ? '<i data-lucide="image"></i>' : '<i data-lucide="file-text"></i>';
+        
+        if (isSidebar) {
+            return `
+                <div class="jarvis-file-pill" style="justify-content: space-between; width: 100%; margin-bottom: 4px;">
+                    <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
+                        ${icon}
+                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px;" title="${file}">${fileName}</span>
+                    </div>
+                    <i data-lucide="x" class="btn-remove-file" onclick="removeAttachedFile('${file.replace(/\\/g, '\\\\')}')" style="width: 12px; height: 12px;"></i>
                 </div>
-                <i data-lucide="x" class="btn-remove-file" onclick="removeAttachedFile('${file.replace(/\\/g, '\\\\')}')" style="width: 12px; height: 12px;"></i>
+            `;
+        }
+
+        return `
+            <div class="jarvis-file-pill ${isImage ? 'has-thumbnail' : ''}">
+                ${icon}
+                <span title="${file}">${fileName}</span>
+                <i data-lucide="x" class="btn-remove-file" onclick="removeAttachedFile('${file.replace(/\\/g, '\\\\')}')"></i>
             </div>
-        `).join('');
+        `;
+    };
+
+    list.innerHTML = jarvisAttachedFiles.map(file => renderFile(file)).join('');
+    if (sidebarList) {
+        sidebarList.innerHTML = jarvisAttachedFiles.map(file => renderFile(file, true)).join('');
     }
     
     lucide.createIcons();
@@ -3934,8 +3973,18 @@ function addChatMessage(role, content) {
         } catch (e) {}
     }
 
-    // Convert newlines to breaks if not HTML
-    const formattedContent = content.includes('<') ? content : content.replace(/\n/g, '<br>');
+    // Convert Markdown to HTML
+    let formattedContent = content;
+    try {
+        if (typeof marked !== 'undefined') {
+            formattedContent = marked.parse(content);
+        } else {
+            formattedContent = content.includes('<') ? content : content.replace(/\n/g, '<br>');
+        }
+    } catch (e) {
+        console.error('Markdown parsing error:', e);
+        formattedContent = content.replace(/\n/g, '<br>');
+    }
     
     msgDiv.innerHTML = `<div class="message-content">${formattedContent}</div>`;
     container.appendChild(msgDiv);

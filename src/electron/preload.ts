@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getApiPort: () => ipcRenderer.invoke('get-api-port'),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     selectFile: () => ipcRenderer.invoke('select-file'),
+    saveTempImage: (base64Data: string) => ipcRenderer.invoke('save-temp-image', base64Data),
     onBackendReady: (callback: (data: any) => void) => {
         ipcRenderer.on('backend-ready', (event, data) => callback(data));
     },
@@ -25,5 +26,7 @@ contextBridge.exposeInMainWorld('electron', {
         if (validChannels.includes(channel)) {
             ipcRenderer.send(channel, data);
         }
-    }
+    },
+    selectFile: () => ipcRenderer.invoke('select-file'),
+    saveTempImage: (base64Data: string) => ipcRenderer.invoke('save-temp-image', base64Data),
 });

@@ -2270,6 +2270,12 @@ html, body {
     align-items: center;
     gap: 6px;
     color: var(--text-primary);
+    transition: all 0.2s;
+}
+
+.jarvis-file-pill.has-thumbnail {
+    border-color: var(--primary);
+    background: rgba(79, 70, 229, 0.1);
 }
 
 .jarvis-file-pill i {

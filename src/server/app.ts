@@ -1,5 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { Database } from 'sqlite3';
 import { ProfileManager } from '../services/profile-manager';
@@ -1661,9 +1662,18 @@ export function createApp(db: Database): Express {
      * Get Jarvis Configuration
      */
     app.get('/v1.0/jarvis/config', asyncHandler(async (req: Request, res: Response) => {
-        const config = await new Promise((resolve) => {
+        const config: any = await new Promise((resolve) => {
             db.get('SELECT * FROM jarvis_config WHERE id = 1', (err, row) => resolve(row));
         });
+        
+        if (config) {
+            // Mask sensitive fields
+            if (config.api_key) config.api_key = '********';
+            if (config.tg_token) config.tg_token = '********';
+            if (config.tg_chat_id) config.tg_chat_id = '********';
+            // tg_whitelist is usually fine to show as it's just IDs, but it was decrypted in UI anyway
+        }
+        
         res.json({ success: true, data: config || {} });
     }));
 
@@ -1678,9 +1688,10 @@ export function createApp(db: Database): Express {
         } = req.body;
         
         // Encrypt API key and TG tokens if provided. 
-        // If undefined, we keep old value. If null or empty string, we clear it.
+        // If undefined, '********' or empty (and we have an old value), we keep old value.
+        // If null, we clear it.
         const encryptIfProvided = (val: any, oldVal: string | null | undefined) => {
-            if (val === undefined) return oldVal;
+            if (val === undefined || val === '********' || (val === '' && oldVal)) return oldVal;
             if (val === null || val === '') return null;
             return EncryptionService.encrypt(val);
         };
