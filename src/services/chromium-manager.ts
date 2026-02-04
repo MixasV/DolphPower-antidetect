@@ -663,6 +663,7 @@ export class ChromiumManager {
                     await Fetch.enable({ handleAuthRequests: true });
                     
                     Fetch.authRequired(async (params: any) => {
+                        console.log(`[CDP] Responding to auth challenge for ${params.authChallenge?.source} auth`);
                         await Fetch.continueWithAuth({
                             requestId: params.requestId,
                             authChallengeResponse: {
@@ -673,6 +674,22 @@ export class ChromiumManager {
                         });
                     });
                 }
+            }
+
+            // Also set basic auth for the browser process level if possible
+            if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
+                const { username, password } = info.proxyOptions.proxyAuth;
+                try {
+                    // This is for some older versions or specific implementations
+                    await Network.authenticate({
+                        requestId: 'proxy',
+                        authChallengeResponse: {
+                            response: 'ProvideCredentials',
+                            username,
+                            password
+                        }
+                    }).catch(() => {});
+                } catch(e) {}
             }
 
             // Grant Geolocation permissions automatically to avoid prompts and leaks

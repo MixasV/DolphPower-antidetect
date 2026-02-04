@@ -4499,7 +4499,8 @@ function openJarvisConfig() {
         setVal('jarvis-tg-token', jarvisConfig.tg_token || '');
         setVal('jarvis-tg-chat-id', jarvisConfig.tg_chat_id || ''); 
         
-        const whitelist = jarvisConfig.tg_whitelist ? EncryptionService.decrypt(jarvisConfig.tg_whitelist) : '';
+        // Removed EncryptionService call which caused frontend crash
+        const whitelist = jarvisConfig.tg_whitelist || '';
         setVal('jarvis-tg-whitelist', whitelist);
         
         setChecked('jarvis-tg-notify-success', jarvisConfig.tg_notify_success === 1);
@@ -4529,7 +4530,7 @@ function openJarvisConfig() {
         const select = document.getElementById('jarvis-master-profile');
         if (select) {
             const currentVal = jarvisConfig.master_profile_id;
-            select.innerHTML = `<option value="">No Profile Selected</option>` + 
+            select.innerHTML = `<option value="">${t('jarvis.noProfileSelected') || 'No Profile Selected'}</option>` + 
                 allProfiles.map(p => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
         }
             
@@ -4582,7 +4583,7 @@ async function saveJarvisConfig() {
         
         const data = await response.json();
         if (data.success) {
-            showToast(t('msg.jarvisConfigSaved'), 'success');
+            showToast(t('jarvis.configSaved') || 'Jarvis configuration saved', 'success');
             closeModal('jarvis-config-modal');
             await loadJarvisConfig();
         } else {
@@ -4595,7 +4596,7 @@ async function saveJarvisConfig() {
 
 async function launchJarvisMasterProfile() {
     if (!jarvisConfig || !jarvisConfig.master_profile_id) {
-        showToast('Please configure a Master Profile in Jarvis settings first', 'warning');
+        showToast(t('jarvis.setupMasterProfileFirst') || 'Please configure a Master Profile in Jarvis settings first', 'warning');
         openJarvisConfig();
         return;
     }

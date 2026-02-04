@@ -146,10 +146,13 @@ export class IPChecker {
                         const args = ['-s', '--connect-timeout', '10', '--max-time', '15'];
                         
                         // Proxy configuration
-                        const proxyUrl = `${protocol}://${proxyConfig.host}:${proxyConfig.port}`;
+                        // Use socks5h for SOCKS5 to ensure DNS is resolved by proxy
+                        const protocolPrefix = protocol.startsWith('socks') ? 'socks5h' : protocol;
+                        const proxyUrl = `${protocolPrefix}://${proxyConfig.host}:${proxyConfig.port}`;
                         args.push('--proxy', proxyUrl);
                         
                         if (proxyConfig.username) {
+                            // Use --proxy-user for authentication
                             args.push('--proxy-user', `${proxyConfig.username}:${proxyConfig.password || ''}`);
                         }
                         

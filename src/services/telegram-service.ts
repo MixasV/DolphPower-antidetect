@@ -119,24 +119,39 @@ export class TelegramService {
     }
 
     async sendMessage(message: string): Promise<boolean> {
-        if (!this.token || !this.chatId) return false;
+        if (!this.token) return false;
 
-        // If whitelist is configured, check if destination ChatID is allowed
-        if (this.whitelist.length > 0 && !this.whitelist.includes(this.chatId)) {
-            console.warn(`[TelegramService] ChatID ${this.chatId} is not in the white-list.`);
-            return false;
+        // If specific ChatID is set, send to it
+        if (this.chatId) {
+            // Check whitelist if destination ChatID is allowed
+            if (this.whitelist.length > 0 && !this.whitelist.includes(this.chatId)) {
+                console.warn(`[TelegramService] ChatID ${this.chatId} is not in the white-list.`);
+                return false;
+            }
+            return this.sendToId(this.chatId, message);
         }
 
+        // If no ChatID is set, broadcast to ALL whitelisted users
+        if (this.whitelist.length > 0) {
+            console.log(`[TelegramService] No ChatID set, broadcasting to ${this.whitelist.length} users in whitelist`);
+            const results = await Promise.all(this.whitelist.map(id => this.sendToId(id, message)));
+            return results.some(r => r);
+        }
+
+        return false;
+    }
+
+    private async sendToId(chatId: string, message: string): Promise<boolean> {
         try {
             const url = `https://api.telegram.org/bot${this.token}/sendMessage`;
             await axios.post(url, {
-                chat_id: this.chatId,
+                chat_id: chatId,
                 text: message,
                 parse_mode: 'HTML'
             });
             return true;
         } catch (error: any) {
-            console.error('[TelegramService] Failed to send message:', error.response?.data || error.message);
+            console.error(`[TelegramService] Failed to send message to ${chatId}:`, error.response?.data || error.message);
             return false;
         }
     }

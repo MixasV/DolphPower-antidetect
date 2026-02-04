@@ -2009,7 +2009,7 @@
                     <textarea id="jarvis-system-prompt" rows="6" placeholder="You are Jarvis..."></textarea>
                 </div>
                 <div class="form-group">
-                    <label>MCP Servers (URL per line)</label>
+                    <label data-i18n="jarvis.mcpServers">MCP Servers (URL per line)</label>
                     <textarea id="jarvis-mcp-servers" rows="2" placeholder="http://localhost:3000/mcp"></textarea>
                 </div>
                 <div class="form-group">
@@ -2053,12 +2053,12 @@
                 </div>
                 <div id="tg-security-fields" style="display: none; padding: 15px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 15px;">
                     <div class="form-group">
-                        <label>Safe Tools (Auto-approved)</label>
+                        <label data-i18n="jarvis.tgSafeTools">Safe Tools (Auto-approved)</label>
                         <div id="tg-tools-list" class="profile-tab-list" style="max-height: 120px;"></div>
                     </div>
                     <label class="checkbox-label">
                         <input type="checkbox" id="jarvis-tg-requires-2fa" checked>
-                        <span>Require 2FA PIN for sensitive actions</span>
+                        <span data-i18n="jarvis.tgRequires2fa">Require 2FA PIN for sensitive actions</span>
                     </label>
                 </div>
                 <div class="form-row" style="gap: 20px;">
@@ -2083,14 +2083,14 @@
 
                 <div class="divider"></div>
                 <div class="form-group">
-                    <label>Zapier / Make Webhook URL</label>
+                    <label data-i18n="jarvis.webhookUrl">Zapier / Make Webhook URL</label>
                     <div class="input-with-action">
                         <input type="text" id="jarvis-webhook-display" readonly style="font-family: monospace; font-size: 11px; background: var(--bg-tertiary);">
                         <button class="btn btn-secondary btn-sm" onclick="copyWebhookUrl()">
                             <i data-lucide="copy"></i>
                         </button>
                     </div>
-                    <p class="help-text">Use this URL to trigger DolfPower actions from external services. Key is auto-filled from API Key.</p>
+                    <p class="help-text" data-i18n="jarvis.webhookHint">Use this URL to trigger DolfPower actions from external services. Key is auto-filled from API Key.</p>
                 </div>
             </div>
             <div class="modal-footer">
