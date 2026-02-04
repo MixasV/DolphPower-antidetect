@@ -3004,7 +3004,7 @@ async function loadLocalBrowsers() {
                         <div style="font-size: 11px; color: var(--text-muted);">Detected on this system</div>
                     </div>
                 </div>
-                <button class="btn btn-sm btn-secondary" onclick="showLocalProfiles('${browser.id}')">Scan Profiles</button>
+                <button class="btn btn-sm btn-secondary" onclick="showLocalProfiles('${browser.id}')">${t('import.scanProfiles') || 'Scan Profiles'}</button>
             `;
             list.appendChild(item);
         }
@@ -3012,6 +3012,29 @@ async function loadLocalBrowsers() {
     
     if (detectedCount === 0) {
         list.innerHTML = `<p class="help-text">${t('msg.noLocalBrowsersDetected') || 'No anti-detect browsers detected on this machine.'}</p>`;
+    }
+}
+
+async function showLocalProfiles(browserId) {
+    const list = document.getElementById('local-browsers-list');
+    list.innerHTML = `<div class="loading-spinner"></div> <p style="text-align:center">${t('msg.scanningProfiles') || 'Scanning profiles...'}</p>`;
+    
+    try {
+        const response = await fetch(`${API_URL}/v1.0/migration/list/${browserId}`);
+        const data = await response.json();
+        
+        if (data.success && data.data.length > 0) {
+            renderLocalProfilesList(data.data, 'local-browsers-list');
+        } else {
+            list.innerHTML = `
+                <p class="help-text">${t('msg.noProfilesFound') || 'No profiles found for this browser.'}</p>
+                <button class="btn btn-sm btn-ghost" onclick="loadLocalBrowsers()"><i data-lucide="arrow-left"></i> ${t('common.back') || 'Back'}</button>
+            `;
+            lucide.createIcons();
+        }
+    } catch (e) {
+        showToast('Failed to load profiles', 'error');
+        loadLocalBrowsers();
     }
 }
 
