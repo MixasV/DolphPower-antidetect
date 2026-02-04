@@ -115,7 +115,7 @@ export class ProfileImporter {
                         navigator: {
                             userAgent: ap.fingerprint_config.ua
                         }
-                    } : undefined
+                    } as any : undefined
                 });
                 
                 imported++;
@@ -177,7 +177,7 @@ export class ProfileImporter {
                         navigator: {
                             userAgent: dp.useragent.value
                         }
-                    } : undefined
+                    } as any : undefined
                 });
                 
                 imported++;
@@ -292,7 +292,7 @@ export class ProfileImporter {
 
                 await this.profileManager.createProfile(name, {
                     proxyId,
-                    fingerprintConfig: ua ? { navigator: { userAgent: ua } } : undefined,
+                    fingerprintConfig: ua ? { navigator: { userAgent: ua } } as any : undefined,
                     notes: `Imported from raw text: ${line.substring(0, 100)}`
                 });
 

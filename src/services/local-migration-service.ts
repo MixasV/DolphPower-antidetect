@@ -14,7 +14,7 @@ const execAsync = util.promisify(exec);
 export interface LocalProfileInfo {
     id: string;
     name: string;
-    browser: 'dolphin' | 'adspower' | 'gologin' | 'octo' | 'multilogin' | 'incogniton' | 'undetectable';
+    browser: 'dolphin' | 'adspower' | 'gologin' | 'octo' | 'multilogin' | 'incogniton' | 'undetectable' | 'bitbrowser' | 'morelogin' | 'geelark';
     path: string;
     notes?: string;
     proxy?: any;
@@ -396,7 +396,7 @@ export class LocalMigrationService {
                 navigator: {
                     userAgent: source.userAgent
                 }
-            } : undefined
+            } as any : undefined
         });
 
         const targetDir = newProfile.user_data_dir;
