@@ -4183,46 +4183,62 @@ function populateTgToolsList(selectedTools = []) {
 function openJarvisConfig() {
     console.log('Opening Jarvis Config Modal');
     if (jarvisConfig) {
-        document.getElementById('jarvis-provider').value = jarvisConfig.provider || 'droidgravity';
-        document.getElementById('jarvis-api-url').value = jarvisConfig.api_url || '';
-        document.getElementById('jarvis-api-key').value = ''; // Don't show encrypted key
-        document.getElementById('jarvis-model-name').value = jarvisConfig.model_name || 'gemini-3-flash';
-        document.getElementById('jarvis-system-prompt').value = jarvisConfig.system_prompt || '';
-        document.getElementById('jarvis-enabled').checked = jarvisConfig.is_enabled === 1;
-        document.getElementById('jarvis-permission-level').value = jarvisConfig.permission_level || 'standard';
-        
-        // MCP
-        document.getElementById('jarvis-mcp-servers').value = jarvisConfig.mcp_servers ? JSON.parse(jarvisConfig.mcp_servers).join('\n') : '';
-
-        // Telegram settings
-        document.getElementById('jarvis-tg-token').value = ''; // Don't show encrypted key
-        document.getElementById('jarvis-tg-chat-id').value = jarvisConfig.tg_chat_id ? '********' : ''; 
-        const whitelist = jarvisConfig.tg_whitelist ? EncryptionService.decrypt(jarvisConfig.tg_whitelist) : '';
-        document.getElementById('jarvis-tg-whitelist').value = whitelist;
-        document.getElementById('jarvis-tg-notify-success').checked = jarvisConfig.tg_notify_success === 1;
-        document.getElementById('jarvis-tg-notify-error').checked = jarvisConfig.tg_notify_error === 1;
-        document.getElementById('jarvis-tg-notify-summary').checked = jarvisConfig.tg_notify_summary === 1;
-        document.getElementById('jarvis-tg-mode').value = jarvisConfig.tg_mode || 'notify';
-        
-        // Telegram Security
-        const safeTools = jarvisConfig.tg_safe_tools ? JSON.parse(jarvisConfig.tg_safe_tools) : ['listProfiles', 'listProxies', 'getProfile', 'startProfile', 'stopProfile', 'listGroups'];
-        populateTgToolsList(safeTools);
-        document.getElementById('jarvis-tg-requires-2fa').checked = jarvisConfig.tg_requires_2fa !== 0;
-        toggleTgSecurityFields();
-
-        // Whitelist warning logic
-        const updateWhitelistWarning = () => {
-            const val = document.getElementById('jarvis-tg-whitelist').value.trim();
-            document.getElementById('tg-whitelist-warning').style.display = val ? 'none' : 'flex';
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val || '';
         };
-        document.getElementById('jarvis-tg-whitelist').oninput = updateWhitelistWarning;
-        updateWhitelistWarning();
+        const setChecked = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.checked = !!val;
+        };
 
-        // Populate Master Profile dropdown
+        setVal('jarvis-provider', jarvisConfig.provider);
+        setVal('jarvis-api-url', jarvisConfig.api_url);
+        setVal('jarvis-api-key', ''); 
+        setVal('jarvis-model-name', jarvisConfig.model_name);
+        setVal('jarvis-system-prompt', jarvisConfig.system_prompt);
+        setChecked('jarvis-enabled', jarvisConfig.is_enabled === 1);
+        setVal('jarvis-permission-level', jarvisConfig.permission_level);
+        
+        const mcpEl = document.getElementById('jarvis-mcp-servers');
+        if (mcpEl) mcpEl.value = jarvisConfig.mcp_servers ? JSON.parse(jarvisConfig.mcp_servers).join('\n') : '';
+
+        setVal('jarvis-tg-token', '');
+        setVal('jarvis-tg-chat-id', jarvisConfig.tg_chat_id ? '********' : ''); 
+        
+        const whitelist = jarvisConfig.tg_whitelist ? EncryptionService.decrypt(jarvisConfig.tg_whitelist) : '';
+        setVal('jarvis-tg-whitelist', whitelist);
+        
+        setChecked('jarvis-tg-notify-success', jarvisConfig.tg_notify_success === 1);
+        setChecked('jarvis-tg-notify-error', jarvisConfig.tg_notify_error === 1);
+        setChecked('jarvis-tg-notify-summary', jarvisConfig.tg_notify_summary === 1);
+        
+        const modeEl = document.getElementById('jarvis-tg-mode');
+        if (modeEl) {
+            modeEl.value = jarvisConfig.tg_mode || 'notify';
+            const safeTools = jarvisConfig.tg_safe_tools ? JSON.parse(jarvisConfig.tg_safe_tools) : ['listProfiles', 'listProxies', 'getProfile', 'startProfile', 'stopProfile', 'listGroups'];
+            populateTgToolsList(safeTools);
+            setChecked('jarvis-tg-requires-2fa', jarvisConfig.tg_requires_2fa !== 0);
+            toggleTgSecurityFields();
+        }
+
+        const whitelistEl = document.getElementById('jarvis-tg-whitelist');
+        const warningEl = document.getElementById('tg-whitelist-warning');
+        if (whitelistEl && warningEl) {
+            const updateWhitelistWarning = () => {
+                const val = whitelistEl.value.trim();
+                warningEl.style.display = val ? 'none' : 'flex';
+            };
+            whitelistEl.oninput = updateWhitelistWarning;
+            updateWhitelistWarning();
+        }
+
         const select = document.getElementById('jarvis-master-profile');
-        const currentVal = jarvisConfig.master_profile_id;
-        select.innerHTML = `<option value="">No Profile Selected</option>` + 
-            allProfiles.map(p => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+        if (select) {
+            const currentVal = jarvisConfig.master_profile_id;
+            select.innerHTML = `<option value="">No Profile Selected</option>` + 
+                allProfiles.map(p => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+        }
             
         toggleJarvisProviderFields();
     }
@@ -4230,29 +4246,38 @@ function openJarvisConfig() {
 }
 
 async function saveJarvisConfig() {
+    const getVal = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.value : '';
+    };
+    const getChecked = (id) => {
+        const el = document.getElementById(id);
+        return el ? (el.checked ? 1 : 0) : 0;
+    };
+
     const safeTools = Array.from(document.querySelectorAll('input[name="tg-safe-tool"]:checked')).map(cb => cb.value);
     
     const config = {
-        provider: document.getElementById('jarvis-provider').value,
-        api_url: document.getElementById('jarvis-api-url').value,
-        api_key: document.getElementById('jarvis-api-key').value,
-        model_name: document.getElementById('jarvis-model-name').value,
-        master_profile_id: document.getElementById('jarvis-master-profile').value,
-        permission_level: document.getElementById('jarvis-permission-level').value,
-        system_prompt: document.getElementById('jarvis-system-prompt').value,
-        is_enabled: document.getElementById('jarvis-enabled').checked ? 1 : 0,
-        mcp_servers: JSON.stringify(document.getElementById('jarvis-mcp-servers').value.split('\n').map(s => s.trim()).filter(s => s)),
+        provider: getVal('jarvis-provider'),
+        api_url: getVal('jarvis-api-url'),
+        api_key: getVal('jarvis-api-key'),
+        model_name: getVal('jarvis-model-name'),
+        master_profile_id: getVal('jarvis-master-profile'),
+        permission_level: getVal('jarvis-permission-level'),
+        system_prompt: getVal('jarvis-system-prompt'),
+        is_enabled: getChecked('jarvis-enabled'),
+        mcp_servers: JSON.stringify(getVal('jarvis-mcp-servers').split('\n').map(s => s.trim()).filter(s => s)),
         
         // Telegram
-        tg_token: document.getElementById('jarvis-tg-token').value,
-        tg_chat_id: document.getElementById('jarvis-tg-chat-id').value === '********' ? undefined : document.getElementById('jarvis-tg-chat-id').value,
-        tg_whitelist: document.getElementById('jarvis-tg-whitelist').value,
-        tg_notify_success: document.getElementById('jarvis-tg-notify-success').checked ? 1 : 0,
-        tg_notify_error: document.getElementById('jarvis-tg-notify-error').checked ? 1 : 0,
-        tg_notify_summary: document.getElementById('jarvis-tg-notify-summary').checked ? 1 : 0,
-        tg_mode: document.getElementById('jarvis-tg-mode').value,
+        tg_token: getVal('jarvis-tg-token'),
+        tg_chat_id: getVal('jarvis-tg-chat-id') === '********' ? undefined : getVal('jarvis-tg-chat-id'),
+        tg_whitelist: getVal('jarvis-tg-whitelist'),
+        tg_notify_success: getChecked('jarvis-tg-notify-success'),
+        tg_notify_error: getChecked('jarvis-tg-notify-error'),
+        tg_notify_summary: getChecked('jarvis-tg-notify-summary'),
+        tg_mode: getVal('jarvis-tg-mode'),
         tg_safe_tools: JSON.stringify(safeTools),
-        tg_requires_2fa: document.getElementById('jarvis-tg-requires-2fa').checked ? 1 : 0
+        tg_requires_2fa: getChecked('jarvis-tg-requires-2fa')
     };
 
     try {

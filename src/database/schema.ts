@@ -240,6 +240,35 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
             )
           `);
 
+          // Extensions table (managed by ExtensionManager but defined here for consistency)
+          db.run(`
+            CREATE TABLE IF NOT EXISTS extensions (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              path TEXT NOT NULL,
+              enabled INTEGER DEFAULT 1,
+              created_at INTEGER NOT NULL,
+              version TEXT,
+              description TEXT
+            )
+          `);
+
+          // Profile Extensions (Join table)
+          db.run(`
+            CREATE TABLE IF NOT EXISTS profile_extensions (
+              profile_id TEXT NOT NULL,
+              extension_id TEXT NOT NULL,
+              enabled INTEGER DEFAULT 1,
+              PRIMARY KEY (profile_id, extension_id),
+              FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+              FOREIGN KEY (extension_id) REFERENCES extensions(id) ON DELETE CASCADE
+            )
+          `);
+
+          // Migration: Add columns to extensions if they don't exist
+          db.run(`ALTER TABLE extensions ADD COLUMN version TEXT`, () => { });
+          db.run(`ALTER TABLE extensions ADD COLUMN description TEXT`, () => { });
+
           // Profile Bookmarks (Join table)
           db.run(`
             CREATE TABLE IF NOT EXISTS profile_bookmarks (

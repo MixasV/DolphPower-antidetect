@@ -1980,6 +1980,10 @@
                     <textarea id="jarvis-system-prompt" rows="6" placeholder="You are Jarvis..."></textarea>
                 </div>
                 <div class="form-group">
+                    <label>MCP Servers (URL per line)</label>
+                    <textarea id="jarvis-mcp-servers" rows="2" placeholder="http://localhost:3000/mcp"></textarea>
+                </div>
+                <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="jarvis-enabled" checked>
                         <span data-i18n="jarvis.enabled">Enable Jarvis AI Features</span>
@@ -2002,6 +2006,27 @@
                 <div class="form-group">
                     <label data-i18n="jarvis.tgWhitelist">White-list IDs (comma separated)</label>
                     <input type="text" id="jarvis-tg-whitelist" placeholder="-101234843, 2344769...">
+                    <div id="tg-whitelist-warning" style="display: none; align-items: center; gap: 8px; color: var(--warning); font-size: 11px; margin-top: 5px;">
+                        <i data-lucide="alert-triangle" style="width: 12px; height: 12px;"></i>
+                        <span>Warning: Whitelist is empty. The bot will respond to ANY user.</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="jarvis.tgMode">Mode</label>
+                    <select id="jarvis-tg-mode" onchange="toggleTgSecurityFields()">
+                        <option value="notify">Notifications Only</option>
+                        <option value="full">Full Remote Control</option>
+                    </select>
+                </div>
+                <div id="tg-security-fields" style="display: none; padding: 15px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 15px;">
+                    <div class="form-group">
+                        <label>Safe Tools (Auto-approved)</label>
+                        <div id="tg-tools-list" class="profile-tab-list" style="max-height: 120px;"></div>
+                    </div>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="jarvis-tg-requires-2fa" checked>
+                        <span>Require 2FA PIN for sensitive actions</span>
+                    </label>
                 </div>
                 <div class="form-row" style="gap: 20px;">
                     <label class="checkbox-label">
