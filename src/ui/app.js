@@ -3020,11 +3020,14 @@ function renderLocalProfilesList(profiles, containerId) {
     list.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <button class="btn btn-xs btn-ghost" onclick="loadLocalBrowsers()"><i data-lucide="arrow-left"></i> ${t('common.back') || 'Back'}</button>
-            <strong>${profiles.length} ${t('import.foundProfiles').replace('{n}', profiles.length)}</strong>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <strong>${profiles.length} ${t('import.foundProfiles').replace('{n}', profiles.length)}</strong>
+                <button class="btn btn-xs btn-success" id="mig-all-btn">Migrate All</button>
+            </div>
         </div>
         <div style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;">
             ${profiles.map((p, idx) => `
-                <div class="local-profile-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; font-size: 13px;">
+                <div class="local-profile-row" id="local-row-${idx}" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; font-size: 13px;">
                     <span title="${escapeHtml(p.path)}">${escapeHtml(p.name)}</span>
                     <button class="btn btn-xs btn-primary" id="mig-btn-${idx}">${t('import.migrateBtn') || 'Migrate'}</button>
                 </div>
@@ -3034,33 +3037,31 @@ function renderLocalProfilesList(profiles, containerId) {
     
     profiles.forEach((p, idx) => {
         const btn = document.getElementById(`mig-btn-${idx}`);
-        if (btn) btn.onclick = () => migrateLocalProfile(p);
+        if (btn) btn.onclick = () => migrateLocalProfile(p, idx);
     });
+
+    const migAllBtn = document.getElementById('mig-all-btn');
+    if (migAllBtn) {
+        migAllBtn.onclick = async () => {
+            if (!confirm(`Migrate all ${profiles.length} profiles?`)) return;
+            for (let i = 0; i < profiles.length; i++) {
+                await migrateLocalProfile(profiles[i], i);
+            }
+            showToast('All profiles migrated', 'success');
+        };
+    }
     
     lucide.createIcons();
 }
 
-async function showLocalProfiles(browser) {
-    const list = document.getElementById('local-browsers-list');
-    list.innerHTML = `<div class="loading-spinner"></div> <p style="text-align:center">${t('msg.scanningProfiles') || 'Scanning profiles...'}</p>`;
-    
-    try {
-        const response = await fetch(`${API_URL}/v1.0/migration/list/${browser}`);
-        const data = await response.json();
-        
-        if (data.success && data.data.length > 0) {
-            renderLocalProfilesList(data.data, 'local-browsers-list');
-        } else {
-            list.innerHTML = `<p class="help-text">No profiles found for ${browser}.</p><button class="btn btn-sm btn-ghost" onclick="loadLocalBrowsers()">Back</button>`;
-        }
-    } catch (e) {
-        showToast('Failed to scan profiles', 'error');
-        loadLocalBrowsers();
+async function migrateLocalProfile(profile, index = null) {
+    const btn = index !== null ? document.getElementById(`mig-btn-${index}`) : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader" class="spin" style="width:10px;height:10px"></i>`;
+        lucide.createIcons();
     }
-}
 
-async function migrateLocalProfile(profile) {
-    showLoading(t('msg.migrating') || 'Migrating...', `Transferring ${profile.name} to DolfPower...`);
     try {
         const response = await fetch(`${API_URL}/v1.0/migration/migrate`, {
             method: 'POST',
@@ -3070,14 +3071,27 @@ async function migrateLocalProfile(profile) {
         const data = await response.json();
         if (data.success) {
             showToast(`${t('msg.migrated') || 'Successfully migrated'}: ${profile.name}`, 'success');
+            if (btn) {
+                btn.className = 'btn btn-xs btn-ghost';
+                btn.innerHTML = '<i data-lucide="check" style="color:var(--success)"></i>';
+                lucide.createIcons();
+                const row = document.getElementById(`local-row-${index}`);
+                if (row) row.style.opacity = '0.6';
+            }
             loadProfiles();
         } else {
             showToast(data.error || 'Migration failed', 'error');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = t('import.migrateBtn') || 'Migrate';
+            }
         }
     } catch (e) {
         showToast('Connection error during migration', 'error');
-    } finally {
-        hideLoading();
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = t('import.migrateBtn') || 'Migrate';
+        }
     }
 }
 
