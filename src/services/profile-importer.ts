@@ -82,11 +82,40 @@ export class ProfileImporter {
             try {
                 const name = ap.name || `AdsPower_${ap.serial_number || uuidv4().slice(0, 8)}`;
                 
+                // Extract proxy if available
+                let proxyId: string | undefined;
+                if (ap.user_proxy_config && ap.user_proxy_config.proxy_host) {
+                    // Create proxy in our system
+                    const proxyResult: any = await new Promise((resolve, reject) => {
+                        const id = uuidv4();
+                        this.db.run(
+                            'INSERT INTO proxies (id, name, protocol, host, port, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                            [
+                                id,
+                                `Imported_${name}`,
+                                ap.user_proxy_config?.proxy_type || 'http',
+                                ap.user_proxy_config?.proxy_host,
+                                parseInt(ap.user_proxy_config?.proxy_port || '80'),
+                                ap.user_proxy_config?.proxy_user,
+                                ap.user_proxy_config?.proxy_password
+                            ],
+                            (err) => err ? reject(err) : resolve({ id })
+                        );
+                    }).catch(e => console.warn('Failed to import proxy:', e));
+                    if (proxyResult) proxyId = proxyResult.id;
+                }
+
                 await this.profileManager.createProfile(name, {
                     notes: ap.remark || undefined,
                     groupId: ap.group_name || undefined,
                     osType: 'windows',
                     browserType: 'chrome',
+                    proxyId,
+                    fingerprintConfig: ap.fingerprint_config ? {
+                        navigator: {
+                            userAgent: ap.fingerprint_config.ua
+                        }
+                    } : undefined
                 });
                 
                 imported++;
@@ -115,12 +144,40 @@ export class ProfileImporter {
                 let osType = 'windows';
                 if (dp.platform === 'macos') osType = 'mac';
                 if (dp.platform === 'linux') osType = 'linux';
+
+                // Extract proxy if available
+                let proxyId: string | undefined;
+                if (dp.proxy && dp.proxy.host) {
+                    const proxyResult: any = await new Promise((resolve, reject) => {
+                        const id = uuidv4();
+                        this.db.run(
+                            'INSERT INTO proxies (id, name, protocol, host, port, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                            [
+                                id,
+                                `Imported_${name}`,
+                                dp.proxy?.type || 'http',
+                                dp.proxy?.host,
+                                dp.proxy?.port || 80,
+                                dp.proxy?.login,
+                                dp.proxy?.password
+                            ],
+                            (err) => err ? reject(err) : resolve({ id })
+                        );
+                    }).catch(e => console.warn('Failed to import proxy:', e));
+                    if (proxyResult) proxyId = proxyResult.id;
+                }
                 
                 await this.profileManager.createProfile(name, {
                     notes,
                     tags,
                     osType,
                     browserType: dp.browserType === 'anty' ? 'chrome' : 'chrome',
+                    proxyId,
+                    fingerprintConfig: dp.useragent?.value ? {
+                        navigator: {
+                            userAgent: dp.useragent.value
+                        }
+                    } : undefined
                 });
                 
                 imported++;
@@ -137,6 +194,11 @@ export class ProfileImporter {
     async importAuto(data: any): Promise<{ imported: number; failed: number; errors: string[]; format: string }> {
         let format = 'unknown';
         
+        // Handle raw text import (e.g. from .txt file)
+        if (typeof data === 'string') {
+            return this.importFromRawText(data);
+        }
+
         // Detect format
         if (Array.isArray(data)) {
             if (data.length > 0) {
@@ -166,6 +228,82 @@ export class ProfileImporter {
         }
         
         return { imported: 0, failed: 0, errors: ['Unknown format'], format };
+    }
+
+    /**
+     * Import from raw text (often used for proxy:ua or simple lists)
+     */
+    async importFromRawText(text: string): Promise<{ imported: number; failed: number; errors: string[]; format: string }> {
+        const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+        let imported = 0;
+        let failed = 0;
+        const errors: string[] = [];
+
+        for (const line of lines) {
+            try {
+                let name = `Imported_${uuidv4().slice(0, 8)}`;
+                let proxyStr: string | undefined;
+                let ua: string | undefined;
+
+                // Try to detect common delimiters: |, ;, tab, or just whitespace
+                let parts: string[] = [];
+                if (line.includes('|')) parts = line.split('|');
+                else if (line.includes(';')) parts = line.split(';');
+                else if (line.includes('\t')) parts = line.split('\t');
+                else if (line.split(':').length > 5) {
+                    // Likely a name:host:port:user:pass:ua format
+                    const rawParts = line.split(':');
+                    parts = [rawParts[0], rawParts.slice(1, 5).join(':'), rawParts.slice(5).join(':')];
+                }
+
+                if (parts.length >= 3) {
+                    name = parts[0].trim();
+                    proxyStr = parts[1].trim();
+                    ua = parts[2].trim();
+                } else if (parts.length === 2) {
+                    // Could be name:proxy or proxy:ua
+                    if (parts[0].includes(':')) {
+                        proxyStr = parts[0].trim();
+                        ua = parts[1].trim();
+                    } else {
+                        name = parts[0].trim();
+                        proxyStr = parts[1].trim();
+                    }
+                } else {
+                    // Single part - maybe just a proxy or just a name
+                    if (line.includes(':')) proxyStr = line.trim();
+                    else name = line.trim();
+                }
+
+                let proxyId: string | undefined;
+                if (proxyStr && (proxyStr.match(/:/g) || []).length >= 1) {
+                    // host:port:user:pass or host:port
+                    const p = proxyStr.split(':');
+                    const id = uuidv4();
+                    const proxyResult: any = await new Promise((resolve, reject) => {
+                        this.db.run(
+                            'INSERT INTO proxies (id, name, protocol, host, port, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                            [id, `Proxy_${name}`, 'http', p[0], parseInt(p[1] || '80'), p[2], p[3]],
+                            (err) => err ? reject(err) : resolve({ id })
+                        );
+                    }).catch(() => null);
+                    if (proxyResult) proxyId = proxyResult.id;
+                }
+
+                await this.profileManager.createProfile(name, {
+                    proxyId,
+                    fingerprintConfig: ua ? { navigator: { userAgent: ua } } : undefined,
+                    notes: `Imported from raw text: ${line.substring(0, 100)}`
+                });
+
+                imported++;
+            } catch (e: any) {
+                failed++;
+                errors.push(`Line fail: ${e.message}`);
+            }
+        }
+
+        return { imported, failed, errors, format: 'raw_text' };
     }
 
     // Import DolfPower native format

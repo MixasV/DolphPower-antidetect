@@ -30,7 +30,9 @@ We customize over 40 hardware and software parameters to make your profiles uniq
 ## 5. Group Organization
 Organize hundreds of profiles into groups with custom colors and descriptions for easier management.
 
-## 6. Real-time Monitoring
-- Monitor running browser instances.
-- Track resource usage (CPU/RAM) to optimize concurrency.
-- Automatic trash cleanup for deleted profiles.
+## 7. Local Browser Migration
+Seamlessly transition from other antidetect browsers to DolfPower.
+- **Auto-Detection**: Automatically detects installations of Dolphin Anty, AdsPower, GoLogin, Octo, Multilogin, and more.
+- **One-Click Import**: Transfer profiles with all their data (cookies, storage, fingerprints) directly into DolfPower.
+- **Deep Scan**: Search for profile data in custom paths for less common or manually installed browsers.
+

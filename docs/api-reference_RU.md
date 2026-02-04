@@ -47,6 +47,26 @@ DolfPower предоставляет полноценный REST API, работ
 ### Остановка браузера
 `GET /v1.0/browser_profiles/:id/stop`
 
+## Миграция
+
+### Обнаружение браузеров
+`GET /v1.0/migration/detect`
+Поиск поддерживаемых антидетект-браузеров в системе.
+
+### Список профилей
+`GET /v1.0/migration/list/:browser`
+Список профилей конкретного браузера (например, `dolphin`, `adspower`).
+
+### Перенос профиля
+`POST /v1.0/migration/migrate`
+Перенос выбранного профиля в DolfPower.
+**Тело:** `{ "profile": { "id": "...", "name": "...", "browser": "...", "path": "..." } }`
+
+### Глубокое сканирование
+`POST /v1.0/migration/deep-scan`
+Поиск данных профилей в указанной папке.
+**Тело:** `{ "path": "C:\\Custom\\Path" }`
+
 ## ИИ Jarvis
 
 ### Чат с Jarvis

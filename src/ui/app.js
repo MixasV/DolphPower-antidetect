@@ -2928,6 +2928,186 @@ async function saveProxy() {
 // ===== Import =====
 function openImportModal() {
     openModal('import-modal');
+    switchImportTab('file');
+    detectLocalBrowsers();
+}
+
+function switchImportTab(tab) {
+    const fileTab = document.getElementById('import-tab-file');
+    const localTab = document.getElementById('import-tab-local');
+    const fileSection = document.getElementById('import-section-file');
+    const localSection = document.getElementById('import-section-local');
+    const importBtn = document.getElementById('import-btn-execute');
+
+    if (tab === 'file') {
+        fileTab.classList.add('active');
+        localTab.classList.remove('active');
+        fileSection.style.display = 'block';
+        localSection.style.display = 'none';
+        importBtn.style.display = 'block';
+    } else {
+        fileTab.classList.remove('active');
+        localTab.classList.add('active');
+        fileSection.style.display = 'none';
+        localSection.style.display = 'block';
+        importBtn.style.display = 'none';
+        loadLocalBrowsers();
+    }
+}
+
+async function detectLocalBrowsers() {
+    try {
+        const response = await fetch(`${API_URL}/v1.0/migration/detect`);
+        const data = await response.json();
+        if (data.success) {
+            window.localBrowsers = data.data;
+        }
+    } catch (e) {
+        console.error('Failed to detect local browsers:', e);
+    }
+}
+
+async function loadLocalBrowsers() {
+    const list = document.getElementById('local-browsers-list');
+    list.innerHTML = `<div class="loading-spinner"></div>`;
+    
+    if (!window.localBrowsers) await detectLocalBrowsers();
+    
+    list.innerHTML = '';
+    const browsers = window.localBrowsers || {};
+    
+    const supportedBrowsers = [
+        { id: 'dolphin', name: 'Dolphin Anty', icon: '🐬' },
+        { id: 'adspower', name: 'AdsPower', icon: '🚀' },
+        { id: 'gologin', name: 'GoLogin', icon: '🎭' },
+        { id: 'octo', name: 'Octo Browser', icon: '🐙' },
+        { id: 'multilogin', name: 'Multilogin', icon: '🌐' },
+        { id: 'incogniton', name: 'Incogniton', icon: '🕶️' },
+        { id: 'undetectable', name: 'Undetectable', icon: '👻' },
+        { id: 'bitbrowser', name: 'BitBrowser', icon: '🛡️' },
+        { id: 'morelogin', name: 'MoreLogin', icon: '📱' },
+        { id: 'geelark', name: 'GeeLark', icon: '🐦' }
+    ];
+
+    let detectedCount = 0;
+    supportedBrowsers.forEach(browser => {
+        if (browsers[browser.id]) {
+            detectedCount++;
+            const item = document.createElement('div');
+            item.className = 'local-browser-item';
+            item.style = 'display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; margin-bottom: 10px;';
+            item.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">${browser.icon}</span>
+                    <div>
+                        <strong>${browser.name}</strong>
+                        <div style="font-size: 11px; color: var(--text-muted);">Detected on this system</div>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-secondary" onclick="showLocalProfiles('${browser.id}')">Scan Profiles</button>
+            `;
+            list.appendChild(item);
+        }
+    });
+    
+    if (detectedCount === 0) {
+        list.innerHTML = `<p class="help-text">${t('msg.noLocalBrowsersDetected') || 'No anti-detect browsers detected on this machine.'}</p>`;
+    }
+}
+
+function renderLocalProfilesList(profiles, containerId) {
+    const list = document.getElementById(containerId);
+    list.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <button class="btn btn-xs btn-ghost" onclick="loadLocalBrowsers()"><i data-lucide="arrow-left"></i> ${t('common.back') || 'Back'}</button>
+            <strong>${profiles.length} ${t('import.foundProfiles').replace('{n}', profiles.length)}</strong>
+        </div>
+        <div style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;">
+            ${profiles.map((p, idx) => `
+                <div class="local-profile-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; font-size: 13px;">
+                    <span title="${escapeHtml(p.path)}">${escapeHtml(p.name)}</span>
+                    <button class="btn btn-xs btn-primary" id="mig-btn-${idx}">${t('import.migrateBtn') || 'Migrate'}</button>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    profiles.forEach((p, idx) => {
+        const btn = document.getElementById(`mig-btn-${idx}`);
+        if (btn) btn.onclick = () => migrateLocalProfile(p);
+    });
+    
+    lucide.createIcons();
+}
+
+async function showLocalProfiles(browser) {
+    const list = document.getElementById('local-browsers-list');
+    list.innerHTML = `<div class="loading-spinner"></div> <p style="text-align:center">${t('msg.scanningProfiles') || 'Scanning profiles...'}</p>`;
+    
+    try {
+        const response = await fetch(`${API_URL}/v1.0/migration/list/${browser}`);
+        const data = await response.json();
+        
+        if (data.success && data.data.length > 0) {
+            renderLocalProfilesList(data.data, 'local-browsers-list');
+        } else {
+            list.innerHTML = `<p class="help-text">No profiles found for ${browser}.</p><button class="btn btn-sm btn-ghost" onclick="loadLocalBrowsers()">Back</button>`;
+        }
+    } catch (e) {
+        showToast('Failed to scan profiles', 'error');
+        loadLocalBrowsers();
+    }
+}
+
+async function migrateLocalProfile(profile) {
+    showLoading(t('msg.migrating') || 'Migrating...', `Transferring ${profile.name} to DolfPower...`);
+    try {
+        const response = await fetch(`${API_URL}/v1.0/migration/migrate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profile })
+        });
+        const data = await response.json();
+        if (data.success) {
+            showToast(`${t('msg.migrated') || 'Successfully migrated'}: ${profile.name}`, 'success');
+            loadProfiles();
+        } else {
+            showToast(data.error || 'Migration failed', 'error');
+        }
+    } catch (e) {
+        showToast('Connection error during migration', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function runDeepScan() {
+    const path = document.getElementById('import-deep-scan-path').value.trim();
+    if (!path) {
+        showToast('Please enter a path to scan', 'warning');
+        return;
+    }
+
+    const list = document.getElementById('local-browsers-list');
+    list.innerHTML = `<div class="loading-spinner"></div> <p style="text-align:center">${t('msg.scanningProfiles') || 'Scanning profiles...'}</p>`;
+
+    try {
+        const response = await fetch(`${API_URL}/v1.0/migration/deep-scan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path })
+        });
+        const data = await response.json();
+
+        if (data.success && data.data.length > 0) {
+            renderLocalProfilesList(data.data, 'local-browsers-list');
+        } else {
+            list.innerHTML = `<p class="help-text">No profiles found in the specified path.</p><button class="btn btn-sm btn-ghost" onclick="loadLocalBrowsers()">Back</button>`;
+        }
+    } catch (e) {
+        showToast('Failed to perform deep scan', 'error');
+        loadLocalBrowsers();
+    }
 }
 
 async function importProfiles() {
@@ -2939,9 +3119,28 @@ async function importProfiles() {
         return;
     }
     
+    showLoading(t('common.importing') || 'Importing...', 'Parsing and creating profiles...');
+    
     try {
-        const text = await fileInput.files[0].text();
-        const profiles = JSON.parse(text);
+        const file = fileInput.files[0];
+        const text = await file.text();
+        let profiles;
+        
+        try {
+            profiles = JSON.parse(text);
+        } catch (e) {
+            // If it's a .txt file and not JSON, it might be a custom format or raw text
+            if (file.name.endsWith('.txt')) {
+                // For now, let's treat it as a list of lines if it's not JSON
+                // However, the user mentioned Dolphin saves in txt. 
+                // Usually Dolphin txt exports are actually JSON but with .txt extension.
+                // If it's still not JSON, we might need a separate parser.
+                console.warn('File is not valid JSON, attempting to treat as raw text/custom format');
+                profiles = text; // Send as string, backend will handle it
+            } else {
+                throw new Error('Invalid JSON format');
+            }
+        }
         
         const response = await fetch(`${API_URL}/v1.0/browser_profiles/import`, {
             method: 'POST',
@@ -2953,11 +3152,19 @@ async function importProfiles() {
         
         if (data.success) {
             showToast(`${t('profiles.import')}: ${data.data.imported}`, 'success');
+            if (data.data.failed > 0) {
+                showToast(`Failed: ${data.data.failed}. ${data.data.errors?.[0] || ''}`, 'warning');
+            }
             closeModal('import-modal');
             loadProfiles();
+        } else {
+            showToast(data.error || t('common.error'), 'error');
         }
     } catch (error) {
-        showToast(t('common.error'), 'error');
+        console.error('Import error:', error);
+        showToast(error.message || t('common.error'), 'error');
+    } finally {
+        hideLoading();
     }
 }
 
@@ -4243,7 +4450,7 @@ function openJarvisConfig() {
 
         setVal('jarvis-provider', jarvisConfig.provider);
         setVal('jarvis-api-url', jarvisConfig.api_url);
-        setVal('jarvis-api-key', ''); 
+        setVal('jarvis-api-key', jarvisConfig.api_key || ''); 
         setVal('jarvis-model-name', jarvisConfig.model_name);
         setVal('jarvis-system-prompt', jarvisConfig.system_prompt);
         setChecked('jarvis-enabled', jarvisConfig.is_enabled === 1);
@@ -4252,8 +4459,8 @@ function openJarvisConfig() {
         const mcpEl = document.getElementById('jarvis-mcp-servers');
         if (mcpEl) mcpEl.value = jarvisConfig.mcp_servers ? JSON.parse(jarvisConfig.mcp_servers).join('\n') : '';
 
-        setVal('jarvis-tg-token', '');
-        setVal('jarvis-tg-chat-id', jarvisConfig.tg_chat_id ? '********' : ''); 
+        setVal('jarvis-tg-token', jarvisConfig.tg_token || '');
+        setVal('jarvis-tg-chat-id', jarvisConfig.tg_chat_id || ''); 
         
         const whitelist = jarvisConfig.tg_whitelist ? EncryptionService.decrypt(jarvisConfig.tg_whitelist) : '';
         setVal('jarvis-tg-whitelist', whitelist);

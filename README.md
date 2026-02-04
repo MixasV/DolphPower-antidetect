@@ -30,6 +30,7 @@ We take security seriously. DolfPower implements a multi-layered defense strateg
 - **Isolated Environments**: Every profile has its own storage, cookies, and fingerprint, ensuring zero cross-linking.
 - **Advanced Proxy Management**: Support for HTTP/SOCKS5 with automatic IP/Timezone/Language sync.
 - **Free Proxy Fetcher**: Built-in tools to grab and test free proxies from public sources.
+- **Local Browser Migration**: Automatically detect and import profiles from Dolphin Anty, AdsPower, GoLogin, Octo, Multilogin, and more with full data transfer.
 - **Extension & Bookmark Management**: Global and profile-specific extensions/bookmarks.
 - **Comprehensive API**: A full REST API allows integration with any external tool or custom AI agent.
 

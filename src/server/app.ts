@@ -25,6 +25,7 @@ import { TelegramService } from '../services/telegram-service';
 import { AuthService } from '../services/auth-service';
 import { DataMigrationService } from '../services/data-migration-service';
 import { SecurityService } from '../services/security-service';
+import { LocalMigrationService } from '../services/local-migration-service';
 
 export function createApp(db: Database): Express {
     const app = express();
@@ -37,6 +38,7 @@ export function createApp(db: Database): Express {
     const profileImporter = new ProfileImporter(db, profileManager);
     const proxyManager = new ProxyManager(db);
     const cookieManager = new CookieManager(db);
+    const localMigrationService = new LocalMigrationService(db, profileManager, proxyManager);
     const extensionManager = new ExtensionManager(db);
     const totpManager = new TOTPManager(db);
     const ipChecker = new IPChecker();
@@ -411,6 +413,36 @@ export function createApp(db: Database): Express {
         }
         
         res.json({ success: true, data, format });
+    }));
+
+    /**
+     * Migration Endpoints
+     */
+    app.get('/v1.0/migration/detect', asyncHandler(async (req: Request, res: Response) => {
+        const detection = await localMigrationService.detectBrowsers();
+        res.json({ success: true, data: detection });
+    }));
+
+    app.get('/v1.0/migration/list/:browser', asyncHandler(async (req: Request, res: Response) => {
+        const { browser } = req.params;
+        const profiles = await localMigrationService.listProfiles(browser);
+        res.json({ success: true, data: profiles });
+    }));
+
+    app.post('/v1.0/migration/migrate', asyncHandler(async (req: Request, res: Response) => {
+        const { profile } = req.body;
+        if (!profile) return res.status(400).json({ error: 'Profile info required' });
+        
+        const newId = await localMigrationService.migrateProfile(profile);
+        res.json({ success: true, data: { id: newId } });
+    }));
+
+    app.post('/v1.0/migration/deep-scan', asyncHandler(async (req: Request, res: Response) => {
+        const { path } = req.body;
+        if (!path) return res.status(400).json({ error: 'Path required' });
+        
+        const profiles = await localMigrationService.deepScan(path);
+        res.json({ success: true, data: profiles });
     }));
 
     /**
@@ -1286,6 +1318,35 @@ export function createApp(db: Database): Express {
     }));
 
     // ==================== IP CHECKER ENDPOINTS ====================
+
+    app.post('/v1.0/proxies/check', asyncHandler(async (req: Request, res: Response) => {
+        const { protocol, host, port, username, password } = req.body;
+        
+        if (!host || !port) {
+            res.status(400).json({ error: 'host and port are required' });
+            return;
+        }
+
+        const result = await ipChecker.checkProxyIP({
+            protocol: protocol || 'http',
+            host,
+            port,
+            username,
+            password
+        });
+
+        res.json({ 
+            success: true, 
+            data: { 
+                working: result.success, 
+                ip: result.info?.ip,
+                country: result.info?.country,
+                countryCode: result.info?.countryCode,
+                city: result.info?.city,
+                latency: result.latency
+            } 
+        });
+    }));
 
     app.get('/v1.0/ip/check', asyncHandler(async (req: Request, res: Response) => {
         const result = await ipChecker.getMyIP();
@@ -2198,12 +2259,16 @@ export function createApp(db: Database): Express {
     app.post('/v1.0/jarvis/tg-test', asyncHandler(async (req: Request, res: Response) => {
         const { token, chatId } = req.body;
         
+        // If values are masked, use the saved ones from telegramService
+        const useToken = (token && token !== '********') ? token : undefined;
+        const useChatId = (chatId && chatId !== '********') ? chatId : undefined;
+        
         let success = false;
-        if (token && chatId) {
+        if (useToken && useChatId) {
             // Test with provided (unsaved) credentials
             try {
-                await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-                    chat_id: chatId,
+                await axios.post(`https://api.telegram.org/bot${useToken}/sendMessage`, {
+                    chat_id: useChatId,
                     text: '🔔 <b>Test Notification</b> from DolfPower (Unsaved Config).\n\nIf you see this, your credentials are correct!',
                     parse_mode: 'HTML'
                 });

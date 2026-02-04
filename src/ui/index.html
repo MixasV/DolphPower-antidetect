@@ -103,11 +103,11 @@
                         <span data-i18n="profiles.createMany">Many Profiles</span>
                     </button>
                     <button class="btn btn-secondary" onclick="openImportModal()">
-                        <i data-lucide="upload"></i>
+                        <i data-lucide="download"></i>
                         <span data-i18n="profiles.import">Import</span>
                     </button>
                     <button class="btn btn-secondary" onclick="openExportModal()">
-                        <i data-lucide="download"></i>
+                        <i data-lucide="upload"></i>
                         <span data-i18n="common.export">Export</span>
                     </button>
                 </div>
@@ -1405,7 +1405,7 @@
     <!-- Import Modal -->
     <div class="modal" id="import-modal">
         <div class="modal-backdrop" onclick="closeModal('import-modal')"></div>
-        <div class="modal-content">
+        <div class="modal-content modal-lg">
             <div class="modal-header">
                 <h2 data-i18n="modal.import">Import Profiles</h2>
                 <button class="modal-close" onclick="closeModal('import-modal')">
@@ -1413,30 +1413,58 @@
                 </button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label data-i18n="form.format">Format</label>
-                    <select id="import-format">
-                        <option value="auto">Auto-detect</option>
-                        <option value="dolfpower">DolfPower</option>
-                        <option value="adspower">AdsPower</option>
-                        <option value="dolphin">Dolphin Anty</option>
-                    </select>
+                <div class="import-tabs" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                    <button class="btn btn-ghost active" id="import-tab-file" onclick="switchImportTab('file')" data-i18n="import.tabFile">File Import</button>
+                    <button class="btn btn-ghost" id="import-tab-local" onclick="switchImportTab('local')" data-i18n="import.tabLocal">Local Browsers</button>
                 </div>
-                <div class="form-group">
-                    <label data-i18n="form.file">Select File</label>
-                    <div class="file-upload">
-                        <input type="file" id="import-file" accept=".json">
-                        <div class="file-upload-label">
-                            <i data-lucide="upload-cloud"></i>
-                            <span data-i18n="form.dropFile">Drop file here or click to browse</span>
+
+                <!-- File Import Section -->
+                <div id="import-section-file">
+                    <div class="form-group">
+                        <label data-i18n="form.format">Format</label>
+                        <select id="import-format">
+                            <option value="auto">Auto-detect</option>
+                            <option value="dolfpower">DolfPower</option>
+                            <option value="adspower">AdsPower</option>
+                            <option value="dolphin">Dolphin Anty</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="form.file">Select File</label>
+                        <div class="file-upload">
+                            <input type="file" id="import-file" accept=".json,.txt">
+                            <div class="file-upload-label">
+                                <i data-lucide="upload-cloud"></i>
+                                <span data-i18n="form.dropFile">Drop file here or click to browse</span>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Local Import Section -->
+                <div id="import-section-local" style="display: none;">
+                    <p class="help-text" style="margin-bottom: 15px;">We detected these browsers on your system. You can migrate profiles directly from them.</p>
+                    <div id="local-browsers-list" class="local-browsers-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                        <div class="loading-spinner"></div>
+                    </div>
+
+                    <div class="divider" style="margin: 20px 0; height: 1px; background: var(--border-color);"></div>
+                    <div class="form-group">
+                        <label data-i18n="import.scanDeep">Deep Scan Custom Path</label>
+                        <div class="input-with-action">
+                            <input type="text" id="import-deep-scan-path" placeholder="C:\Custom\Browser\Profiles">
+                            <button class="btn btn-secondary btn-sm" onclick="runDeepScan()">
+                                <i data-lucide="search"></i> Scan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
                 <div id="import-preview" class="import-preview"></div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('import-modal')" data-i18n="common.cancel">Cancel</button>
-                <button class="btn btn-primary" onclick="importProfiles()" data-i18n="common.import">Import</button>
+                <button class="btn btn-primary" id="import-btn-execute" onclick="importProfiles()" data-i18n="common.import">Import</button>
             </div>
         </div>
     </div>

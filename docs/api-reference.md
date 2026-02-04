@@ -47,6 +47,26 @@ Clears master key and security tokens.
 ### Stop Browser
 `GET /v1.0/browser_profiles/:id/stop`
 
+## Migration
+
+### Detect Browsers
+`GET /v1.0/migration/detect`
+Find supported antidetect browsers installed on the local system.
+
+### List Profiles
+`GET /v1.0/migration/list/:browser`
+List profiles from a specific browser (e.g., `dolphin`, `adspower`).
+
+### Migrate Profile
+`POST /v1.0/migration/migrate`
+Transfer a profile to DolfPower.
+**Body:** `{ "profile": { "id": "...", "name": "...", "browser": "...", "path": "..." } }`
+
+### Deep Scan
+`POST /v1.0/migration/deep-scan`
+Search for profiles in a custom directory.
+**Body:** `{ "path": "C:\\Custom\\Path" }`
+
 ## Jarvis AI
 
 ### Chat with Jarvis

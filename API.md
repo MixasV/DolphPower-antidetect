@@ -265,6 +265,83 @@ Content-Type: application/json
 
 ---
 
+## Migration
+
+### Detect Local Browsers
+
+```http
+GET /v1.0/migration/detect
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "dolphin": true,
+    "adspower": false,
+    "gologin": true,
+    "octo": false,
+    "multilogin": false,
+    "incogniton": false,
+    "undetectable": false,
+    "bitbrowser": false,
+    "morelogin": false,
+    "geelark": false
+  }
+}
+```
+
+### List Profiles from Browser
+
+```http
+GET /v1.0/migration/list/:browser
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "12345",
+      "name": "My Dolphin Profile",
+      "browser": "dolphin",
+      "path": "C:\\Users\\...\\dolphin_anty\\browser_profiles\\12345"
+    }
+  ]
+}
+```
+
+### Migrate Profile
+
+```http
+POST /v1.0/migration/migrate
+Content-Type: application/json
+
+{
+  "profile": {
+    "id": "12345",
+    "name": "My Dolphin Profile",
+    "browser": "dolphin",
+    "path": "..."
+  }
+}
+```
+
+### Deep Scan for Profiles
+
+```http
+POST /v1.0/migration/deep-scan
+Content-Type: application/json
+
+{
+  "path": "C:\\Custom\\Browser\\Path"
+}
+```
+
+---
+
 ## Extensions
 
 ### List All Extensions
