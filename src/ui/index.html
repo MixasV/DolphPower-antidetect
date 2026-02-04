@@ -1443,7 +1443,7 @@
 
                 <!-- Local Import Section -->
                 <div id="import-section-local" style="display: none;">
-                    <p class="help-text" style="margin-bottom: 15px;">We detected these browsers on your system. You can migrate profiles directly from them.</p>
+                    <p class="help-text" style="margin-bottom: 15px;" data-i18n="import.detectedDesc">We detected these browsers on your system. You can migrate profiles directly from them.</p>
                     <div id="local-browsers-list" class="local-browsers-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
                         <div class="loading-spinner"></div>
                     </div>
@@ -1452,9 +1452,9 @@
                     <div class="form-group">
                         <label data-i18n="import.scanDeep">Deep Scan Custom Path</label>
                         <div class="input-with-action">
-                            <input type="text" id="import-deep-scan-path" placeholder="C:\Custom\Browser\Profiles">
+                            <input type="text" id="import-deep-scan-path" placeholder="C:\Custom\Browser\Profiles" data-i18n-placeholder="import.scanDeepPlaceholder">
                             <button class="btn btn-secondary btn-sm" onclick="runDeepScan()">
-                                <i data-lucide="search"></i> Scan
+                                <i data-lucide="search"></i> <span data-i18n="common.check">Scan</span>
                             </button>
                         </div>
                     </div>
