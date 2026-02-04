@@ -3001,7 +3001,7 @@ async function loadLocalBrowsers() {
                     <span style="font-size: 20px;">${browser.icon}</span>
                     <div>
                         <strong>${browser.name}</strong>
-                        <div style="font-size: 11px; color: var(--text-muted);">Detected on this system</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">${t('import.detectedOnSystem') || 'Detected on this system'}</div>
                     </div>
                 </div>
                 <button class="btn btn-sm btn-secondary" onclick="showLocalProfiles('${browser.id}')">${t('import.scanProfiles') || 'Scan Profiles'}</button>
