@@ -402,7 +402,7 @@ export class LocalMigrationService {
         const targetDir = newProfile.user_data_dir;
 
         if (source.browser === 'dolphin') {
-            await this.transferDolphinData(source.id, targetDir);
+            await this.transferDolphinData(source.id, source.path, targetDir);
         } else if (source.browser === 'adspower') {
             await this.transferAdsPowerData(source.path, targetDir);
         } else {
@@ -459,16 +459,24 @@ export class LocalMigrationService {
         return proxy.id;
     }
 
-    private async transferDolphinData(dolphinId: string, targetDir: string) {
-        const sourceDir = path.join(this.paths.dolphin, 'browser_profiles', dolphinId);
-        const zipPath = path.join(sourceDir, `${dolphinId}.datadir.zip`);
+    private async transferDolphinData(dolphinId: string, sourceDir: string, targetDir: string) {
+        let zipPath = path.join(sourceDir, `${dolphinId}.datadir.zip`);
+
+        if (!existsSync(zipPath)) {
+            // Fallback for custom layouts or deep scans where zip might be named differently or sourceDir is different
+            try {
+                const files = await fs.readdir(sourceDir);
+                const foundZip = files.find(f => f.endsWith('.datadir.zip'));
+                if (foundZip) zipPath = path.join(sourceDir, foundZip);
+            } catch (e) {}
+        }
 
         if (existsSync(zipPath)) {
             // Dolphin stores data in a zip. We need to extract it to targetDir
             try {
                 // Using PowerShell's Expand-Archive which is available on Windows
                 await execAsync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${targetDir}' -Force"`);
-                console.log(`✓ Extracted Dolphin data for ${dolphinId}`);
+                console.log(`✓ Extracted Dolphin data from ${zipPath}`);
             } catch (e) {
                 console.error(`Failed to extract Dolphin zip:`, e);
             }
@@ -477,6 +485,9 @@ export class LocalMigrationService {
             const rawDir = path.join(sourceDir, 'Default');
             if (existsSync(rawDir)) {
                 await this.copyDir(rawDir, path.join(targetDir, 'Default'));
+            } else {
+                // Last ditch effort: copy the whole sourceDir content
+                await this.copyDir(sourceDir, targetDir);
             }
         }
     }
