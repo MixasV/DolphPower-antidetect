@@ -1673,37 +1673,55 @@ export function createApp(db: Database): Express {
     app.post('/v1.0/jarvis/config', asyncHandler(async (req: Request, res: Response) => {
         const { 
             provider, api_url, api_key, model_name, master_profile_id, permission_level, system_prompt, is_enabled,
-            tg_token, tg_chat_id, tg_whitelist, tg_notify_success, tg_notify_error, tg_notify_summary
+            tg_token, tg_chat_id, tg_whitelist, tg_notify_success, tg_notify_error, tg_notify_summary,
+            tg_mode, mcp_servers, tg_safe_tools, tg_requires_2fa
         } = req.body;
         
-        // Encrypt API key and TG tokens if provided
-        const encryptedKey = api_key ? EncryptionService.encrypt(api_key) : undefined;
-        const encryptedTgToken = tg_token ? EncryptionService.encrypt(tg_token) : undefined;
-        const encryptedTgChatId = tg_chat_id ? EncryptionService.encrypt(tg_chat_id) : undefined;
-        const encryptedTgWhitelist = tg_whitelist ? EncryptionService.encrypt(tg_whitelist) : undefined;
+        // Encrypt API key and TG tokens if provided. 
+        // If undefined, we keep old value. If null or empty string, we clear it.
+        const encryptIfProvided = (val: any, oldVal: string | null | undefined) => {
+            if (val === undefined) return oldVal;
+            if (val === null || val === '') return null;
+            return EncryptionService.encrypt(val);
+        };
+
+        // Get current config to handle partial updates properly
+        const currentConfig: any = await new Promise((resolve) => {
+            db.get('SELECT * FROM jarvis_config WHERE id = 1', (err, row) => resolve(row));
+        });
+
+        const encryptedKey = encryptIfProvided(api_key, currentConfig?.api_key);
+        const encryptedTgToken = encryptIfProvided(tg_token, currentConfig?.tg_token);
+        const encryptedTgChatId = encryptIfProvided(tg_chat_id, currentConfig?.tg_chat_id);
+        const encryptedTgWhitelist = encryptIfProvided(tg_whitelist, currentConfig?.tg_whitelist);
         
         await new Promise<void>((resolve, reject) => {
             db.run(`
                 INSERT INTO jarvis_config (
                     id, provider, api_url, api_key, model_name, master_profile_id, permission_level, system_prompt, is_enabled, 
-                    tg_token, tg_chat_id, tg_whitelist, tg_notify_success, tg_notify_error, tg_notify_summary, updated_at
+                    tg_token, tg_chat_id, tg_whitelist, tg_notify_success, tg_notify_error, tg_notify_summary,
+                    tg_mode, mcp_servers, tg_safe_tools, tg_requires_2fa, updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     provider = excluded.provider,
                     api_url = excluded.api_url,
-                    api_key = COALESCE(excluded.api_key, jarvis_config.api_key),
+                    api_key = excluded.api_key,
                     model_name = excluded.model_name,
                     master_profile_id = excluded.master_profile_id,
                     permission_level = excluded.permission_level,
                     system_prompt = excluded.system_prompt,
                     is_enabled = excluded.is_enabled,
-                    tg_token = COALESCE(excluded.tg_token, jarvis_config.tg_token),
-                    tg_chat_id = COALESCE(excluded.tg_chat_id, jarvis_config.tg_chat_id),
-                    tg_whitelist = COALESCE(excluded.tg_whitelist, jarvis_config.tg_whitelist),
+                    tg_token = excluded.tg_token,
+                    tg_chat_id = excluded.tg_chat_id,
+                    tg_whitelist = excluded.tg_whitelist,
                     tg_notify_success = excluded.tg_notify_success,
                     tg_notify_error = excluded.tg_notify_error,
                     tg_notify_summary = excluded.tg_notify_summary,
+                    tg_mode = excluded.tg_mode,
+                    mcp_servers = excluded.mcp_servers,
+                    tg_safe_tools = excluded.tg_safe_tools,
+                    tg_requires_2fa = excluded.tg_requires_2fa,
                     updated_at = excluded.updated_at
             `, [
                 provider || 'droidgravity',
@@ -1717,9 +1735,13 @@ export function createApp(db: Database): Express {
                 encryptedTgToken,
                 encryptedTgChatId,
                 encryptedTgWhitelist,
-                tg_notify_success || 0,
-                tg_notify_error || 0,
-                tg_notify_summary || 0,
+                tg_notify_success === undefined ? (currentConfig?.tg_notify_success ?? 1) : (tg_notify_success ? 1 : 0),
+                tg_notify_error === undefined ? (currentConfig?.tg_notify_error ?? 1) : (tg_notify_error ? 1 : 0),
+                tg_notify_summary === undefined ? (currentConfig?.tg_notify_summary ?? 1) : (tg_notify_summary ? 1 : 0),
+                tg_mode || 'notify',
+                mcp_servers || '[]',
+                tg_safe_tools || '[]',
+                tg_requires_2fa === undefined ? (currentConfig?.tg_requires_2fa ?? 1) : (tg_requires_2fa ? 1 : 0),
                 Date.now()
             ], (err) => err ? reject(err) : resolve());
         });
@@ -2163,12 +2185,33 @@ export function createApp(db: Database): Express {
      * Test Telegram Notification
      */
     app.post('/v1.0/jarvis/tg-test', asyncHandler(async (req: Request, res: Response) => {
-        const success = await telegramService.sendMessage('🔔 <b>Test Notification</b> from DolfPower.\n\nTelegram setup was successful!');
+        const { token, chatId } = req.body;
+        
+        let success = false;
+        if (token && chatId) {
+            // Test with provided (unsaved) credentials
+            try {
+                await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+                    chat_id: chatId,
+                    text: '🔔 <b>Test Notification</b> from DolfPower (Unsaved Config).\n\nIf you see this, your credentials are correct!',
+                    parse_mode: 'HTML'
+                });
+                success = true;
+            } catch (e: any) {
+                return res.status(500).json({ 
+                    success: false, 
+                    error: `Telegram Error: ${e.response?.data?.description || e.message}. Make sure you started the bot with /start command.` 
+                });
+            }
+        } else {
+            // Test with saved config
+            success = await telegramService.sendMessage('🔔 <b>Test Notification</b> from DolfPower.\n\nTelegram setup was successful!');
+        }
         
         if (success) {
             res.json({ success: true });
         } else {
-            res.status(500).json({ success: false, error: 'Failed to send message. Check bot token and chat ID.' });
+            res.status(500).json({ success: false, error: 'Failed to send message. Check bot token and chat ID. Also ensure you have sent /start to the bot.' });
         }
     }));
 

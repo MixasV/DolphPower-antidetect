@@ -4331,9 +4331,16 @@ async function launchJarvisMasterProfile() {
 }
 
 async function testJarvisTelegram() {
+    const token = document.getElementById('jarvis-tg-token').value;
+    const chatId = document.getElementById('jarvis-tg-chat-id').value;
+    
     showToast(t('proxies.testing'), 'info');
     try {
-        const response = await fetch(`${API_URL}/v1.0/jarvis/tg-test`, { method: 'POST' });
+        const response = await fetch(`${API_URL}/v1.0/jarvis/tg-test`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, chatId: chatId === '********' ? undefined : chatId })
+        });
         const data = await response.json();
         if (data.success) {
             showToast(t('common.success'), 'success');
