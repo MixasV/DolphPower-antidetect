@@ -1,6 +1,5 @@
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 import util from 'util';
-const execPromise = util.promisify(exec);
 
 export interface IPInfo {
     ip: string;
@@ -100,6 +99,27 @@ export class IPChecker {
         }
     ];
 
+    private async runCurl(args: string[]): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const cp = spawn('curl', args, { windowsHide: true });
+            let stdout = '';
+            let stderr = '';
+            cp.stdout.on('data', d => stdout += d.toString());
+            cp.stderr.on('data', d => stderr += d.toString());
+            cp.on('close', code => {
+                if (code === 0) resolve(stdout);
+                else reject(new Error(stderr || `Exit code ${code}`));
+            });
+            cp.on('error', err => reject(err));
+            
+            // Safety timeout
+            setTimeout(() => {
+                try { cp.kill(); } catch(e) {}
+                reject(new Error('Curl request timed out'));
+            }, 20000);
+        });
+    }
+
     async checkIP(proxyConfig?: {
         protocol: string;
         host: string;
@@ -113,19 +133,29 @@ export class IPChecker {
         if (proxyConfig) {
             try {
                 const protocol = proxyConfig.protocol.replace(':', '');
-                const auth = proxyConfig.username ? `--proxy-user "${proxyConfig.username}:${proxyConfig.password}"` : '';
-                const proxyArg = `--proxy ${protocol}://${proxyConfig.host}:${proxyConfig.port} ${auth}`;
                 
                 // Use multiple check URLs for curl to ensure reliability
                 const checkUrls = [
                     "http://ip-api.com/json/?fields=status,message,country,countryCode,region,city,zip,lat,lon,timezone,isp,org,as,proxy,hosting,query",
-                    "https://api.myip.com",
-                    "https://ipapi.co/json/"
+                    "https://ipapi.co/json/",
+                    "https://api.ipify.org?format=json"
                 ];
 
                 for (const url of checkUrls) {
                     try {
-                        const { stdout } = await execPromise(`curl -s ${proxyArg} "${url}" --connect-timeout 10 --max-time 15`);
+                        const args = ['-s', '--connect-timeout', '10', '--max-time', '15'];
+                        
+                        // Proxy configuration
+                        const proxyUrl = `${protocol}://${proxyConfig.host}:${proxyConfig.port}`;
+                        args.push('--proxy', proxyUrl);
+                        
+                        if (proxyConfig.username) {
+                            args.push('--proxy-user', `${proxyConfig.username}:${proxyConfig.password || ''}`);
+                        }
+                        
+                        args.push(url);
+
+                        const stdout = await this.runCurl(args);
                         if (!stdout) continue;
                         
                         const data = JSON.parse(stdout);

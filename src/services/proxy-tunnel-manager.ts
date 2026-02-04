@@ -12,7 +12,9 @@ export class ProxyTunnelManager {
         'icanhazip.com',
         'ident.me',
         'ifconfig.me',
-        'api.myip.com'
+        'api.myip.com',
+        '127.0.0.1',
+        'localhost'
     ];
 
     async createHttpTunnel(profileId: string, proxy: { protocol: string; host: string; port: number; username?: string; password?: string }, startBlocked: boolean = false): Promise<number> {
@@ -40,25 +42,25 @@ export class ProxyTunnelManager {
                         if (!remoteSocket) return;
 
                         // Phase 1: Greeting
-                        const greeting = proxy.username ? 
+                        const greeting = (proxy.username && proxy.password) ? 
                             Buffer.from([0x05, 0x02, 0x00, 0x02]) : // No auth, User/Pass
                             Buffer.from([0x05, 0x01, 0x00]);        // No auth only
                         
                         remoteSocket.write(greeting);
 
                         remoteSocket.once('data', (data) => {
-                            if (data[0] !== 0x05) return; // Invalid version
+                            if (data[0] !== 0x05) return;
                             
                             const method = data[1];
-                            if (method === 0x02) {
+                            if (method === 0x02 && proxy.username && proxy.password) {
                                 // User/Pass Auth
-                                const uLen = proxy.username!.length;
-                                const pLen = proxy.password!.length;
+                                const uLen = proxy.username.length;
+                                const pLen = proxy.password.length;
                                 const authData = Buffer.concat([
                                     Buffer.from([0x01, uLen]),
-                                    Buffer.from(proxy.username!),
+                                    Buffer.from(proxy.username),
                                     Buffer.from([pLen]),
-                                    Buffer.from(proxy.password!)
+                                    Buffer.from(proxy.password)
                                 ]);
                                 remoteSocket!.write(authData);
                                 
@@ -72,35 +74,55 @@ export class ProxyTunnelManager {
                     };
 
                     const sendConnectRequest = () => {
-                        if (!remoteSocket || !sniffedHost) return;
+                        if (!remoteSocket) return;
 
-                        // We need the destination from the sniffedHost or buffer
-                        // But since Chromium thinks this is an HTTP proxy, 
-                        // it sends the full URL or Host header.
-                        // For SOCKS5, we usually connect to the host sniffed from the first packet.
-                        
-                        const host = sniffedHost || proxy.host; // Fallback
-                        const port = 80; // Default if not found in sniff
-                        
-                        let portNum = port;
-                        let targetHost = host;
-                        if (host.includes(':')) {
-                            const parts = host.split(':');
-                            targetHost = parts[0];
-                            portNum = parseInt(parts[1]);
+                        // We need the destination
+                        // Since Chromium thinks this is an HTTP proxy, it sends CONNECT host:port or GET http://host...
+                        const target = sniffedHost || 'google.com:443';
+                        let host: string;
+                        let port: number;
+
+                        if (target.includes(':')) {
+                            const parts = target.split(':');
+                            host = parts[0];
+                            port = parseInt(parts[1]);
+                        } else {
+                            host = target;
+                            port = 80; 
                         }
 
-                        const hostBuf = Buffer.from(targetHost);
-                        const request = Buffer.concat([
-                            Buffer.from([0x05, 0x01, 0x00, 0x03, hostBuf.length]),
-                            hostBuf,
-                            Buffer.from([ (portNum >> 8) & 0xff, portNum & 0xff ])
-                        ]);
+                        const isIP = net.isIP(host);
+                        let request;
+
+                        if (isIP === 4) {
+                            const ipParts = host.split('.').map(p => parseInt(p));
+                            request = Buffer.concat([
+                                Buffer.from([0x05, 0x01, 0x00, 0x01]),
+                                Buffer.from(ipParts),
+                                Buffer.from([ (port >> 8) & 0xff, port & 0xff ])
+                            ]);
+                        } else {
+                            const hostBuf = Buffer.from(host);
+                            request = Buffer.concat([
+                                Buffer.from([0x05, 0x01, 0x00, 0x03, hostBuf.length]),
+                                hostBuf,
+                                Buffer.from([ (port >> 8) & 0xff, port & 0xff ])
+                            ]);
+                        }
 
                         remoteSocket.write(request);
                         remoteSocket.once('data', (res) => {
                             if (res[1] === 0x00) {
                                 handshaked = true;
+                                
+                                // BRIDGE: If the browser sent a CONNECT request, we MUST send a 200 OK back
+                                // so it starts sending the TLS handshake (or other payload).
+                                const lastData = buffer[buffer.length - 1]?.toString('binary') || '';
+                                if (lastData.startsWith('CONNECT ')) {
+                                    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+                                    buffer.pop(); // Remove the CONNECT request as it's fulfilled
+                                }
+                                
                                 flushBuffer();
                             }
                         });
@@ -162,10 +184,17 @@ export class ProxyTunnelManager {
 
                 clientSocket.on('data', (data) => {
                     if (isUnlocked) {
-                        if (!remoteSocket) connectToRemote();
+                        if (!remoteSocket) {
+                            // Try to sniff host/port even if unlocked for SOCKS5 destination
+                            const dataStr = data.toString('binary');
+                            const match = dataStr.match(/(?:CONNECT\s+([a-zA-Z0-9.-]+(?::\d+)?)|Host:\s+([a-zA-Z0-9.-]+))/i);
+                            if (match) {
+                                sniffedHost = match[1] || match[2];
+                            }
+                            connectToRemote();
+                        }
                         buffer.push(data);
                         if (remoteSocket && remoteSocket.writable) {
-                            // Already connected, just write
                             while (buffer.length > 0) remoteSocket.write(buffer.shift()!);
                         }
                         return;
@@ -173,9 +202,10 @@ export class ProxyTunnelManager {
 
                     // Sniff host for whitelist
                     const dataStr = data.toString('binary');
-                    const match = dataStr.match(/(?:CONNECT|Host:)\s+([a-zA-Z0-9.-]+)/i);
+                    // Improved regex to capture host and port
+                    const match = dataStr.match(/(?:CONNECT\s+([a-zA-Z0-9.-]+(?::\d+)?)|Host:\s+([a-zA-Z0-9.-]+))/i);
                     if (match) {
-                        sniffedHost = match[1];
+                        sniffedHost = match[1] || match[2];
                         if (this.allowedHosts.some(h => sniffedHost?.includes(h))) {
                             console.log(`[Tunnel] Allowing whitelisted host ${sniffedHost} for blocked profile ${profileId}`);
                             connectToRemote();

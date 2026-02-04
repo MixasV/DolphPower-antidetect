@@ -19,6 +19,7 @@ interface ProcessInfo {
         proxyAuth?: { username?: string; password?: string };
     };
     cdpClient?: any;
+    startUrls?: string[];
 }
 
 export class ChromiumManager {
@@ -370,7 +371,8 @@ export class ChromiumManager {
             pid: process.pid!,
             devToolsPort,
             tunnelPort,
-            proxyOptions: options
+            proxyOptions: options,
+            startUrls: [] // Will be set in applyFingerprintViaCDP or launch
         };
 
         this.runningProcesses.set(profileId, processInfo);
@@ -494,10 +496,41 @@ export class ChromiumManager {
     }
 
     /**
-     * Unlock proxy tunnel for profile
+     * Unlock proxy tunnel for profile and open start URLs
      */
-    unlockProfile(profileId: string): void {
+    async unlockProfile(profileId: string): Promise<void> {
         this.proxyTunnelManager.unlockTunnel(profileId);
+        
+        // Open deferred start URLs
+        const info = this.runningProcesses.get(profileId);
+        if (info && info.startUrls && info.startUrls.length > 0) {
+            console.log(`🌐 Proxy verified for ${profileId}, opening ${info.startUrls.length} start URLs`);
+            await this.openStartUrls(profileId, info.startUrls);
+            info.startUrls = []; // Clear so they don't open again
+        }
+    }
+
+    /**
+     * Open start URLs via CDP
+     */
+    private async openStartUrls(profileId: string, urls: string[]): Promise<void> {
+        const info = this.runningProcesses.get(profileId);
+        if (!info) return;
+
+        try {
+            const CDP = require('chrome-remote-interface');
+            const client = await CDP({ port: info.devToolsPort });
+            const { Target } = client;
+
+            for (const url of urls) {
+                if (url && url.trim()) {
+                    await Target.createTarget({ url: url.trim() });
+                }
+            }
+            await client.close();
+        } catch (error) {
+            console.error(`Failed to open start URLs for profile ${profileId}:`, error);
+        }
     }
 
     /**
@@ -878,19 +911,14 @@ export class ChromiumManager {
             const ipCheckUrl = 'file:///' + path.join(__dirname, '..', 'ui', 'ip-check.html').replace(/\\/g, '/');
             const ipCheckUrlWithId = `${ipCheckUrl}?profileId=${profileId}`;
             
+            // Store start URLs for later (after proxy verification)
+            if (info && startUrls && startUrls.length > 0) {
+                info.startUrls = startUrls.filter(u => u && u.trim());
+            }
+
             // We ALWAYS open IP check in the primary tab first
             console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
             await Page.navigate({ url: ipCheckUrlWithId });
-            
-            // Handle start URLs - they always open in NEW tabs if IP check is primary
-            if (startUrls && startUrls.length > 0) {
-                for (const url of startUrls) {
-                    if (url && url.trim()) {
-                        console.log(`🌐 Opening start URL in new tab: ${url}`);
-                        await Target.createTarget({ url: url.trim() });
-                    }
-                }
-            }
 
             // Ensure the IP check tab is focused
             const targets = await Target.getTargets();

@@ -218,7 +218,15 @@
                             
                             // UNLOCK the proxy tunnel for this profile now that IP is confirmed
                             console.log('Unlocking profile traffic...');
+                            statusEl.innerHTML += '<p style="color: #60a5fa; font-size: 12px; margin-top: 10px;">Verifying proxy and opening your start pages...</p>';
+                            
                             await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
+                            
+                            // Give some visual feedback that we are done
+                            setTimeout(() => {
+                                const p = statusEl.querySelector('p:last-child');
+                                if (p) p.innerText = 'All set! Your start pages are opening in new tabs.';
+                            }, 2000);
                         } catch (e) {
                             console.error('Failed to update IP or unlock on backend:', e);
                         }

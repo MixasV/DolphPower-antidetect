@@ -868,7 +868,7 @@ export function createApp(db: Database): Express {
      * Unlock profile proxy tunnel after IP check
      */
     app.post('/v1.0/browser_profiles/:id/unlock', asyncHandler(async (req: Request, res: Response) => {
-        chromiumManager.unlockProfile(req.params.id);
+        await chromiumManager.unlockProfile(req.params.id);
         res.json({ success: true });
     }));
 
