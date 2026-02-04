@@ -3022,7 +3022,7 @@ function renderLocalProfilesList(profiles, containerId) {
             <button class="btn btn-xs btn-ghost" onclick="loadLocalBrowsers()"><i data-lucide="arrow-left"></i> ${t('common.back') || 'Back'}</button>
             <div style="display: flex; align-items: center; gap: 10px;">
                 <strong>${profiles.length} ${t('import.foundProfiles').replace('{n}', profiles.length)}</strong>
-                <button class="btn btn-xs btn-success" id="mig-all-btn">Migrate All</button>
+                <button class="btn btn-xs btn-success" id="mig-all-btn">${t('import.migrateAllBtn') || 'Migrate All'}</button>
             </div>
         </div>
         <div style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;">
@@ -3043,11 +3043,11 @@ function renderLocalProfilesList(profiles, containerId) {
     const migAllBtn = document.getElementById('mig-all-btn');
     if (migAllBtn) {
         migAllBtn.onclick = async () => {
-            if (!confirm(`Migrate all ${profiles.length} profiles?`)) return;
+            if (!confirm(t('import.confirmMigrateAll').replace('{n}', profiles.length) || `Migrate all ${profiles.length} profiles?`)) return;
             for (let i = 0; i < profiles.length; i++) {
                 await migrateLocalProfile(profiles[i], i);
             }
-            showToast('All profiles migrated', 'success');
+            showToast(t('import.migrateSuccess') || 'All profiles migrated', 'success');
         };
     }
     
