@@ -4219,19 +4219,65 @@ function addChatMessage(role, content) {
 
     // Convert Markdown to HTML
     let formattedContent = content;
-    try {
-        if (typeof marked !== 'undefined') {
-            formattedContent = marked.parse(content);
-        } else {
-            formattedContent = content.includes('<') ? content : content.replace(/\n/g, '<br>');
+    
+    // Handle technical system logs formatting
+    if (formattedContent.includes('[System] Tool executed successfully:') || formattedContent.includes('[System Error]')) {
+        const parts = formattedContent.split(/(\[System\] Tool executed successfully:.*|\[System Error\].*)/s);
+        let newContent = '';
+        
+        for (let part of parts) {
+            if (part.startsWith('[System] Tool executed successfully:')) {
+                const logData = part.replace('[System] Tool executed successfully:', '').trim();
+                newContent += `
+                    <div class="jarvis-system-log collapsed">
+                        <div class="jarvis-system-log-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                            <span><i data-lucide="terminal" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Tool Execution Log</span>
+                            <i data-lucide="chevron-down" style="width:12px;height:12px;"></i>
+                        </div>
+                        <div class="jarvis-system-log-body">${escapeHtml(logData)}</div>
+                    </div>
+                `;
+            } else if (part.startsWith('[System Error]')) {
+                const logData = part.replace('[System Error]', '').trim();
+                newContent += `
+                    <div class="jarvis-system-log" style="border-color: var(--danger);">
+                        <div class="jarvis-system-log-header" style="background: rgba(239, 68, 68, 0.1); color: var(--danger);" onclick="this.parentElement.classList.toggle('collapsed')">
+                            <span><i data-lucide="alert-circle" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Execution Error</span>
+                            <i data-lucide="chevron-down" style="width:12px;height:12px;"></i>
+                        </div>
+                        <div class="jarvis-system-log-body" style="color: var(--danger);">${escapeHtml(logData)}</div>
+                    </div>
+                `;
+            } else {
+                // Parse markdown for the regular text part
+                try {
+                    if (typeof marked !== 'undefined' && part.trim()) {
+                        newContent += marked.parse(part);
+                    } else {
+                        newContent += part.replace(/\n/g, '<br>');
+                    }
+                } catch (e) {
+                    newContent += part.replace(/\n/g, '<br>');
+                }
+            }
         }
-    } catch (e) {
-        console.error('Markdown parsing error:', e);
-        formattedContent = content.replace(/\n/g, '<br>');
+        formattedContent = newContent;
+    } else {
+        try {
+            if (typeof marked !== 'undefined') {
+                formattedContent = marked.parse(content);
+            } else {
+                formattedContent = content.includes('<') ? content : content.replace(/\n/g, '<br>');
+            }
+        } catch (e) {
+            console.error('Markdown parsing error:', e);
+            formattedContent = content.replace(/\n/g, '<br>');
+        }
     }
     
     msgDiv.innerHTML = `<div class="message-content">${formattedContent}</div>`;
     container.appendChild(msgDiv);
+    lucide.createIcons();
     container.scrollTop = container.scrollHeight;
     return id;
 }
@@ -4604,19 +4650,19 @@ async function launchJarvisMasterProfile() {
     const btn = document.getElementById('btn-launch-jarvis-profile');
     const originalHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = `<i data-lucide="loader" class="spin"></i> Launching...`;
+    btn.innerHTML = `<i data-lucide="loader" class="spin"></i> ${t('jarvis.launching') || 'Launching...'}`;
     lucide.createIcons();
 
     try {
         const response = await fetch(`${API_URL}/v1.0/browser_profiles/${jarvisConfig.master_profile_id}/start`);
         const data = await response.json();
         if (data.success) {
-            showToast('Jarvis Orchestrator started', 'success');
+            showToast(t('jarvis.orchestratorStarted') || 'Jarvis Orchestrator started', 'success');
         } else {
-            showToast(data.error || 'Failed to start profile', 'error');
+            showToast(data.error || t('modal.loadFailed'), 'error');
         }
     } catch (e) {
-        showToast('Connection error', 'error');
+        showToast(t('jarvis.connectionError') || 'Connection error', 'error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;

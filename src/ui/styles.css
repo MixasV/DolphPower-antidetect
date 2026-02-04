@@ -2017,6 +2017,41 @@ html, body {
     font-size: 14px;
     line-height: 1.5;
     position: relative;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.jarvis-system-log {
+    margin-top: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+}
+
+.jarvis-system-log-header {
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+}
+
+.jarvis-system-log-body {
+    padding: 10px;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.jarvis-system-log.collapsed .jarvis-system-log-body {
+    display: none;
 }
 
 .message.user .message-content {

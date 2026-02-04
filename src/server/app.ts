@@ -1876,33 +1876,64 @@ export function createApp(db: Database): Express {
         });
         if (config) await jarvisService.setConfig(config);
 
-        const response = await jarvisService.askJarvis(message, history || [], attached_files || [], page_context);
-        
+        let currentHistory = [...(history || [])];
+        let currentMessage = message;
+        let finalResponse = '';
         let toolResult = null;
-        let finalResponse = response;
+        let loopCount = 0;
+        const maxLoops = 10;
 
-        // Tool calling logic
-        if (response.includes('"action": "callTool"') && jarvisToolManager) {
-            try {
-                // Find JSON block
-                const jsonMatch = response.match(/\{[\s\S]*"action":\s*"callTool"[\s\S]*\}/);
-                if (jsonMatch) {
-                    const toolCall = JSON.parse(jsonMatch[0]);
-                    
-                    // Merge external confirmation into tool args
-                    const toolArgs = { ...toolCall.args, confirmed };
-                    const result = await jarvisToolManager.executeTool(toolCall.tool, toolArgs);
-                    toolResult = result;
+        while (loopCount < maxLoops) {
+            loopCount++;
+            const response = await jarvisService.askJarvis(currentMessage, currentHistory, attached_files || [], page_context);
+            finalResponse += (finalResponse ? '\n\n' : '') + response;
+            
+            // Tool calling logic
+            if (response.includes('"action": "callTool"') && jarvisToolManager) {
+                try {
+                    // Find JSON block
+                    const jsonMatch = response.match(/\{[\s\S]*"action":\s*"callTool"[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const toolCall = JSON.parse(jsonMatch[0]);
+                        
+                        // Merge external confirmation into tool args (only for the first iteration or if specifically passed)
+                        const toolArgs = { ...toolCall.args, confirmed: loopCount === 1 ? confirmed : undefined };
+                        const result = await jarvisToolManager.executeTool(toolCall.tool, toolArgs);
+                        toolResult = result;
 
-                    if (result.success) {
-                        finalResponse = `${response}\n\n[System] Tool executed successfully: ${JSON.stringify(result.data)}`;
-                    } else {
-                        finalResponse = `${response}\n\n[System Error] ${result.error}`;
+                        if (result.success) {
+                            const successMsg = `[System] Tool executed successfully: ${JSON.stringify(result.data)}`;
+                            finalResponse += `\n\n${successMsg}`;
+                            
+                            // If it requires confirmation (e.g. from ToolManager logic), we stop and ask user
+                            if (result.requiresConfirmation) break;
+
+                            // Otherwise, feed the result back to Jarvis to continue the task
+                            currentHistory.push({ role: 'user', content: currentMessage });
+                            currentHistory.push({ role: 'assistant', content: response });
+                            currentMessage = successMsg;
+                            continue; // Continue loop to get next action
+                        } else {
+                            const errorMsg = `[System Error] ${result.error}`;
+                            finalResponse += `\n\n${errorMsg}`;
+                            
+                            if (result.requiresConfirmation) break;
+
+                            // Feed error back to Jarvis so it can try to fix it or explain
+                            currentHistory.push({ role: 'user', content: currentMessage });
+                            currentHistory.push({ role: 'assistant', content: response });
+                            currentMessage = errorMsg;
+                            continue;
+                        }
                     }
+                } catch (e: any) {
+                    console.error('Jarvis Tool Call parsing failed:', e.message);
+                    break;
                 }
-            } catch (e: any) {
-                console.error('Jarvis Tool Call parsing failed:', e.message);
             }
+            
+            // If no tool call or loop finished, break
+            break;
         }
         
         // Save to history if session_id provided
