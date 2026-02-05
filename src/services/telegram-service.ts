@@ -21,6 +21,16 @@ export class TelegramService {
     }
 
     updateConfig(config: JarvisConfig) {
+        // Only attempt to decrypt if master key is set or fields are not encrypted
+        // EncryptionService.decrypt handles the check internally now, but we should be cautious here
+        if (!EncryptionService.isMasterKeySet()) {
+            this.token = null;
+            this.chatId = null;
+            this.whitelist = [];
+            this.stopPolling();
+            return;
+        }
+
         this.token = config.tg_token ? EncryptionService.decrypt(config.tg_token) : null;
         this.chatId = config.tg_chat_id ? EncryptionService.decrypt(config.tg_chat_id) : null;
         

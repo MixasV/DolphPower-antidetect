@@ -51,78 +51,86 @@ export function createApp(db: Database): Express {
     const telegramService = new TelegramService();
     let jarvisToolManager: JarvisToolManager | null = null;
 
-    // Initialize Jarvis & Telegram configuration from DB
-    db.get('SELECT * FROM jarvis_config WHERE id = 1', (err, row: any) => {
-        if (row) {
-            jarvisService.setConfig(row);
-            telegramService.updateConfig(row);
-            
-            jarvisToolManager = new JarvisToolManager(
-                db, 
-                row, 
-                profileManager, 
-                proxyManager, 
-                chromiumManager, 
-                rpaEngine,
-                jarvisTaskManager,
-                extensionManager,
-                jarvisController,
-                jarvisService.getMCPManager()
-            );
+    // Helper to refresh Jarvis & Telegram configuration from DB
+    const refreshJarvisServices = async () => {
+        return new Promise<void>((resolve) => {
+            db.get('SELECT * FROM jarvis_config WHERE id = 1', (err, row: any) => {
+                if (row) {
+                    jarvisService.setConfig(row);
+                    telegramService.updateConfig(row);
+                    
+                    jarvisToolManager = new JarvisToolManager(
+                        db, 
+                        row, 
+                        profileManager, 
+                        proxyManager, 
+                        chromiumManager, 
+                        rpaEngine,
+                        jarvisTaskManager,
+                        extensionManager,
+                        jarvisController,
+                        jarvisService.getMCPManager()
+                    );
 
-            // Set up Telegram command handler
-            telegramService.setCommandHandler(async (message, chatId) => {
-                console.log(`[Telegram] Command from ${chatId}: ${message}`);
-                
-                // 1. Check if it's a PIN for a pending action
-                const pinMatch = message.match(/^\d{6}$/);
-                if (pinMatch) {
-                    const pending = securityService.getPendingActionByPin(message);
-                    if (pending && pending.chatId === chatId) {
-                        const result = await jarvisToolManager?.executeTool(pending.action, { ...pending.args, confirmed: true }, 'telegram');
-                        securityService.resolveAction(pending.id);
-                        if (result?.success) {
-                            return `✅ <b>Confirmed!</b> Action executed successfully.\n\nResult: <code>${JSON.stringify(result.data, null, 2)}</code>`;
-                        } else {
-                            return `❌ <b>Failed:</b> ${result?.error}`;
-                        }
-                    }
-                }
-
-                // 2. Standard Jarvis processing
-                const response = await jarvisService.askJarvis(message, [], [], undefined, 'telegram');
-                let finalResponse = response;
-
-                // Handle tool calls from Telegram
-                if (response.includes('"action": "callTool"') && jarvisToolManager) {
-                    try {
-                        const jsonMatch = response.match(/\{[\s\S]*"action":\s*"callTool"[\s\S]*\}/);
-                        if (jsonMatch) {
-                            const toolCall = JSON.parse(jsonMatch[0]);
-                            
-                            // Check tool against whitelist and 2FA requirement
-                            const result = await jarvisToolManager.executeTool(toolCall.tool, toolCall.args, 'telegram');
-                            
-                            if (result.requiresConfirmation) {
-                                const pending = securityService.createPendingAction(toolCall.tool, chatId, toolCall.args);
-                                return `${response}\n\n⚠️ <b>SECURITY CONFIRMATION REQUIRED</b>\nTo execute this action, please enter this PIN in the chat:\n\n<code>${pending.pin}</code>\n\n(Expires in 5 minutes)`;
-                            }
-
-                            if (result.success) {
-                                finalResponse = `${response}\n\n✅ <b>Result:</b> ${JSON.stringify(result.data, null, 2)}`;
-                            } else {
-                                finalResponse = `${response}\n\n❌ <b>Error:</b> ${result.error}`;
+                    // Set up Telegram command handler
+                    telegramService.setCommandHandler(async (message, chatId) => {
+                        console.log(`[Telegram] Command from ${chatId}: ${message}`);
+                        
+                        // 1. Check if it's a PIN for a pending action
+                        const pinMatch = message.match(/^\d{6}$/);
+                        if (pinMatch) {
+                            const pending = securityService.getPendingActionByPin(message);
+                            if (pending && pending.chatId === chatId) {
+                                const result = await jarvisToolManager?.executeTool(pending.action, { ...pending.args, confirmed: true }, 'telegram');
+                                securityService.resolveAction(pending.id);
+                                if (result?.success) {
+                                    return `✅ <b>Confirmed!</b> Action executed successfully.\n\nResult: <code>${JSON.stringify(result.data, null, 2)}</code>`;
+                                } else {
+                                    return `❌ <b>Failed:</b> ${result?.error}`;
+                                }
                             }
                         }
-                    } catch (e: any) {
-                        finalResponse = `${response}\n\n⚠️ Tool parsing error: ${e.message}`;
-                    }
-                }
 
-                return finalResponse;
+                        // 2. Standard Jarvis processing
+                        const response = await jarvisService.askJarvis(message, [], [], undefined, 'telegram');
+                        let finalResponse = response;
+
+                        // Handle tool calls from Telegram
+                        if (response.includes('"action": "callTool"') && jarvisToolManager) {
+                            try {
+                                const jsonMatch = response.match(/\{[\s\S]*"action":\s*"callTool"[\s\S]*\}/);
+                                if (jsonMatch) {
+                                    const toolCall = JSON.parse(jsonMatch[0]);
+                                    
+                                    // Check tool against whitelist and 2FA requirement
+                                    const result = await jarvisToolManager.executeTool(toolCall.tool, toolCall.args, 'telegram');
+                                    
+                                    if (result.requiresConfirmation) {
+                                        const pending = securityService.createPendingAction(toolCall.tool, chatId, toolCall.args);
+                                        return `${response}\n\n⚠️ <b>SECURITY CONFIRMATION REQUIRED</b>\nTo execute this action, please enter this PIN in the chat:\n\n<code>${pending.pin}</code>\n\n(Expires in 5 minutes)`;
+                                    }
+
+                                    if (result.success) {
+                                        finalResponse = `${response}\n\n✅ <b>Result:</b> ${JSON.stringify(result.data, null, 2)}`;
+                                    } else {
+                                        finalResponse = `${response}\n\n❌ <b>Error:</b> ${result.error}`;
+                                    }
+                                }
+                            } catch (e: any) {
+                                finalResponse = `${response}\n\n⚠️ Tool parsing error: ${e.message}`;
+                            }
+                        }
+
+                        return finalResponse;
+                    });
+                }
+                resolve();
             });
-        }
-    });
+        });
+    };
+
+    // Initial load (will skip sensitive parts if locked)
+    refreshJarvisServices();
 
     // Initial task run
     jarvisTaskManager.runPendingTasks().catch(e => console.error('Failed to start jarvis tasks:', e));
@@ -212,6 +220,9 @@ export function createApp(db: Database): Express {
 
         await authService.initialize(password);
         
+        // Refresh services with the new master key
+        await refreshJarvisServices();
+        
         // Migrate existing data to be protected by the new master password
         await migrationService.reencryptAllData().catch(e => console.error('Initial migration failed:', e));
         
@@ -229,6 +240,9 @@ export function createApp(db: Database): Express {
 
         const result = await authService.login(password);
         if (result.success) {
+            // Refresh services with the provided master key
+            await refreshJarvisServices();
+            
             // Ensure data is up to date with the latest key (handles transitions)
             await migrationService.reencryptAllData().catch(e => console.error('Migration on login failed:', e));
             res.json({ success: true });

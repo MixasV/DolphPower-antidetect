@@ -76,6 +76,14 @@ export class JarvisTaskManager {
 
     async runScheduler() {
         if (this.isRunning) return;
+        
+        // If master key is not set, we cannot process tasks (especially those with encrypted logs/data)
+        if (!EncryptionService.isMasterKeySet()) {
+            // Check again in 10 seconds if we are still locked
+            setTimeout(() => this.runScheduler(), 10000);
+            return;
+        }
+
         this.isRunning = true;
 
         try {

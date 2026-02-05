@@ -66,6 +66,14 @@ export class EncryptionService {
 
       const iv = Buffer.from(parts.shift() || '', 'hex');
       const encryptedText = parts.join(':');
+      
+      // If master key is NOT set and we are not forced to use hardware key,
+      // we can't decrypt data that was encrypted with master key.
+      if (!this.masterKey && !useHardwareKey) {
+        // Silently return empty or try hardware key if it might be encrypted with it
+        return this.decrypt(text, true);
+      }
+
       const key = (useHardwareKey || !this.masterKey) ? this.deriveHardwareKey() : this.masterKey;
       
       const decipher = crypto.createDecipheriv(this.algorithm, key, iv);
@@ -75,9 +83,17 @@ export class EncryptionService {
     } catch (e) {
       // If decryption with master key fails, try hardware key as fallback
       if (!useHardwareKey && this.masterKey) {
-        return this.decrypt(text, true);
+        try {
+          return this.decrypt(text, true);
+        } catch (e2) {
+          // Both failed
+        }
       }
-      console.error('Decryption failed:', e);
+      
+      // Log only if it's a real unexpected error, not just a wrong key during startup
+      if (this.masterKey || useHardwareKey) {
+        console.error('Decryption failed (Master Key set):', (e as Error).message);
+      }
       return '';
     }
   }
