@@ -7,9 +7,9 @@ import { ExtensionManager } from './extension-manager';
 import { PathSanitizer } from './path-sanitizer';
 
 export interface RPAAction {
-    type: 'click' | 'type' | 'scroll' | 'wait' | 'screenshot' | 'navigate' | 'select' | 'hover' | 'pressKey' | 'reload' | 'back' | 'variable' | 'installExtension';
+    type: 'click' | 'type' | 'scroll' | 'wait' | 'screenshot' | 'navigate' | 'select' | 'hover' | 'pressKey' | 'keyPress' | 'reload' | 'back' | 'variable' | 'installExtension' | 'getText' | 'writeFile';
     selector?: string;
-    value?: string;
+    value?: any;
     text?: string;
     key?: string;
     url?: string;
@@ -19,7 +19,13 @@ export interface RPAAction {
     y?: number;
     condition?: string;
     variableName?: string;
+    variable?: string; // Alias for variableName
     extensionId?: string;
+    path?: string;
+    content?: string;
+    append?: boolean;
+    timeout?: number;
+    args?: any; // To support Jarvis passing args inside an object
     healingAttempted?: boolean;
 }
 
@@ -109,18 +115,21 @@ export class RPAEngine {
     }
 
     /**
-     * Resolve dynamic values like {{FILE:path|line:N}} or {{VAR:name}}
+     * Resolve dynamic values like {{FILE:path|line:N}}, {{VAR:name}}, or {{name}}
      */
     private async resolveValue(value: string, executionVars: Record<string, string> = {}): Promise<string> {
         if (!value || typeof value !== 'string') return value;
 
-        // Handle {{VAR:name}}
-        let resolved = value.replace(/\{\{VAR:([^}]+)\}\}/g, (_, name) => {
-            return executionVars[name] || '';
+        // Handle {{VAR:name}} and {{name}} (common Jarvis format)
+        let resolved = value.replace(/\{\{(?:VAR:)?([^|{}]+)\}\}/g, (match, name) => {
+            const cleanName = name.trim();
+            // Don't match FILE: patterns here
+            if (cleanName.startsWith('FILE:')) return match;
+            return executionVars[cleanName] !== undefined ? executionVars[cleanName] : match;
         });
 
         // Handle {{FILE:path|line:N}} or {{FILE:path|line:INDEX}}
-        const fileMatches = resolved.match(/\{\{FILE:([^|]+)(?:\|line:(\w+))?\}\}/g);
+        const fileMatches = resolved.match(/\{\{FILE:([^|{}]+)(?:\|line:(\w+))?\}\}/g);
         if (fileMatches) {
             for (const match of fileMatches) {
                 const parts = match.slice(7, -2).split('|');
@@ -314,19 +323,22 @@ export class RPAEngine {
                 return { hovered: resolvedAction.selector };
 
             case 'type':
-                const textToType = resolvedAction.text || resolvedAction.value;
-                if (!resolvedAction.selector || !textToType) {
+                const textToType = resolvedAction.text || resolvedAction.value || resolvedAction.args?.text;
+                const typeSelector = resolvedAction.selector || resolvedAction.args?.selector;
+                if (!typeSelector || textToType === undefined) {
                     throw new Error('Selector and text/value required for type action');
                 }
                 
-                await page.focus(resolvedAction.selector);
-                await this.typeHumanly(page, textToType);
-                return { typed: textToType, into: resolvedAction.selector };
+                await page.focus(typeSelector);
+                await this.typeHumanly(page, String(textToType));
+                return { typed: textToType, into: typeSelector };
 
             case 'pressKey':
-                if (!resolvedAction.key) throw new Error('Key required for pressKey action');
-                await page.keyboard.press(resolvedAction.key);
-                return { pressed: resolvedAction.key };
+            case 'keyPress':
+                const keyToPress = resolvedAction.key || resolvedAction.value || resolvedAction.args?.key;
+                if (!keyToPress) throw new Error('Key required for pressKey action');
+                await page.keyboard.press(keyToPress);
+                return { pressed: keyToPress };
 
             case 'reload':
                 await page.reload({ waitUntil: 'networkidle2' });
@@ -357,6 +369,12 @@ export class RPAEngine {
                 return { scrolled: true };
 
             case 'wait':
+                if (resolvedAction.selector) {
+                    const timeout = resolvedAction.timeout || resolvedAction.ms || 30000;
+                    await page.waitForSelector(resolvedAction.selector, { timeout });
+                    return { waitedForSelector: resolvedAction.selector, timeout };
+                }
+
                 const waitTime = resolvedAction.ms || resolvedAction.delay || 1000;
                 // Humanization: Perform micro-movements during long waits
                 if (waitTime > 2000) {
@@ -401,11 +419,39 @@ export class RPAEngine {
                 return { selected: resolvedAction.value, in: resolvedAction.selector };
 
             case 'variable':
-                if (resolvedAction.variableName && resolvedAction.value) {
-                    executionVars[resolvedAction.variableName] = resolvedAction.value;
-                    return { variableSet: resolvedAction.variableName };
+                const vName = resolvedAction.variableName || resolvedAction.variable;
+                if (vName && resolvedAction.value !== undefined) {
+                    executionVars[vName] = String(resolvedAction.value);
+                    return { variableSet: vName };
                 }
                 return { error: 'Variable name and value required' };
+
+            case 'getText':
+                const getVarName = resolvedAction.variableName || resolvedAction.variable;
+                if (!resolvedAction.selector || !getVarName) {
+                    throw new Error('Selector and variableName required for getText action');
+                }
+                const text = await page.$eval(resolvedAction.selector, (el: any) => el.textContent || el.innerText || '');
+                executionVars[getVarName] = text.trim();
+                return { getText: text.trim(), into: getVarName };
+
+            case 'writeFile':
+                const filePath = resolvedAction.path || resolvedAction.value;
+                const content = resolvedAction.content || resolvedAction.text || '';
+                if (!filePath) throw new Error('Path required for writeFile action');
+                
+                const sanitizedWritePath = PathSanitizer.sanitize(filePath);
+                if (!sanitizedWritePath) throw new Error(`Security block: Access to path ${filePath} is denied.`);
+                
+                // Ensure directory exists
+                await fs.mkdir(path.dirname(sanitizedWritePath), { recursive: true }).catch(() => {});
+                
+                if (resolvedAction.append) {
+                    await fs.appendFile(sanitizedWritePath, content, 'utf8');
+                } else {
+                    await fs.writeFile(sanitizedWritePath, content, 'utf8');
+                }
+                return { writeFile: sanitizedWritePath, appended: !!resolvedAction.append };
 
             case 'installExtension':
                 if (!this.extensionManager) throw new Error('ExtensionManager not initialized in RPAEngine');

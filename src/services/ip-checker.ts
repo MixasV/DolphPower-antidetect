@@ -202,15 +202,21 @@ export class IPChecker {
                 };
 
                 if (proxyConfig) {
+                    // Axios proxy config
+                    const protocol = proxyConfig.protocol.replace(':', '');
                     config.proxy = {
-                        protocol: proxyConfig.protocol,
+                        protocol: protocol,
                         host: proxyConfig.host,
-                        port: proxyConfig.port,
-                        auth: proxyConfig.username && proxyConfig.password ? {
-                            username: proxyConfig.username,
-                            password: proxyConfig.password,
-                        } : undefined,
+                        port: proxyConfig.port
                     };
+                    
+                    // Auth for axios: handle empty passwords correctly
+                    if (proxyConfig.username) {
+                        config.proxy.auth = {
+                            username: proxyConfig.username,
+                            password: proxyConfig.password || ''
+                        };
+                    }
                 }
 
                 const response = await axios.get(config.url, config);

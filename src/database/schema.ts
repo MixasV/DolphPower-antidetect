@@ -372,6 +372,7 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
 
           // Migration: Add cron_expression
           db.run(`ALTER TABLE jarvis_tasks ADD COLUMN cron_expression TEXT`, () => {});
+          db.run(`ALTER TABLE jarvis_tasks ADD COLUMN repeat_interval INTEGER DEFAULT 0`, () => {});
 
           // App Authentication & Security
           db.run(`

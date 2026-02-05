@@ -35,14 +35,14 @@ export class ProxyTunnelManager {
                     remoteSocket = net.connect(proxy.port, proxy.host);
                     let handshaked = proxy.protocol !== 'socks5';
 
-                    const auth = (proxy.username && proxy.password) ? 
-                        Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64') : null;
+                    const auth = (proxy.username) ? 
+                        Buffer.from(`${proxy.username}:${proxy.password || ''}`).toString('base64') : null;
 
                     const performSocks5Handshake = () => {
                         if (!remoteSocket) return;
 
                         // Phase 1: Greeting
-                        const greeting = (proxy.username && proxy.password) ? 
+                        const greeting = (proxy.username) ? 
                             Buffer.from([0x05, 0x02, 0x00, 0x02]) : // No auth, User/Pass
                             Buffer.from([0x05, 0x01, 0x00]);        // No auth only
                         
@@ -52,15 +52,16 @@ export class ProxyTunnelManager {
                             if (data[0] !== 0x05) return;
                             
                             const method = data[1];
-                            if (method === 0x02 && proxy.username && proxy.password) {
+                            if (method === 0x02 && proxy.username) {
                                 // User/Pass Auth
                                 const uLen = proxy.username.length;
-                                const pLen = proxy.password.length;
+                                const password = proxy.password || '';
+                                const pLen = password.length;
                                 const authData = Buffer.concat([
                                     Buffer.from([0x01, uLen]),
                                     Buffer.from(proxy.username),
                                     Buffer.from([pLen]),
-                                    Buffer.from(proxy.password)
+                                    Buffer.from(password)
                                 ]);
                                 remoteSocket!.write(authData);
                                 

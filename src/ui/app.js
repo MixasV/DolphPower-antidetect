@@ -3957,6 +3957,12 @@ function handleJarvisKeydown(event) {
 document.addEventListener('DOMContentLoaded', () => {
     const jarvisInput = document.getElementById('jarvis-input');
     if (jarvisInput) {
+        // Auto-expand textarea
+        jarvisInput.addEventListener('input', () => {
+            jarvisInput.style.height = 'auto';
+            jarvisInput.style.height = (jarvisInput.scrollHeight) + 'px';
+        });
+
         jarvisInput.addEventListener('paste', async (event) => {
             const items = (event.clipboardData || event.originalEvent.clipboardData).items;
             const images = [];
@@ -4099,7 +4105,10 @@ async function sendJarvisMessage(text = null, extraData = {}) {
     const message = text || input.value.trim();
     if (!message) return;
 
-    if (!text) input.value = '';
+    if (!text) {
+        input.value = '';
+        input.style.height = '40px'; // Reset height
+    }
     
     // Don't show technical "confirm" messages in chat
     if (!extraData.isConfirmedAction) {

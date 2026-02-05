@@ -2227,9 +2227,12 @@ html, body {
     color: var(--text-primary);
     font-size: 14px;
     resize: none;
-    height: 40px;
+    min-height: 40px;
+    max-height: 200px;
     padding: 8px 0;
     font-family: inherit;
+    overflow-y: auto;
+}
 }
 
 .btn-send {
@@ -2258,7 +2261,13 @@ html, body {
     color: var(--text-muted);
 }
 
-/* Jarvis Log Card (AI output for scripts) */
+.message-content pre, .message-content code {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 .jarvis-script-card {
     margin-top: 10px;
     background: #000;
@@ -2268,6 +2277,7 @@ html, body {
     border-radius: 8px;
     font-size: 12px;
     white-space: pre-wrap;
+    word-break: break-all;
     max-height: 300px;
     overflow-y: auto;
 }

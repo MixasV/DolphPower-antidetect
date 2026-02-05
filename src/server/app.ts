@@ -1393,6 +1393,9 @@ export function createApp(db: Database): Express {
 
         try {
             const result = await ipChecker.checkProxyIP(proxy);
+            if (!result.success) {
+                console.warn(`[ProxyCheck] Failed for ${proxy.host}:${proxy.port}: ${result.error}`);
+            }
             res.json({ 
                 success: true, 
                 data: { 
@@ -1400,11 +1403,13 @@ export function createApp(db: Database): Express {
                     ip: result.info?.ip,
                     country: result.info?.country,
                     countryCode: result.info?.countryCode,
-                    city: result.info?.city
+                    city: result.info?.city,
+                    error: result.error
                 } 
             });
-        } catch (error) {
-            res.json({ success: true, data: { working: false } });
+        } catch (error: any) {
+            console.error(`[ProxyCheck] Fatal error for ${proxy.host}:${proxy.port}:`, error.message);
+            res.json({ success: true, data: { working: false, error: error.message } });
         }
     }));
 
@@ -1905,10 +1910,33 @@ export function createApp(db: Database): Express {
             // Tool calling logic
             if (response.includes('"action": "callTool"') && jarvisToolManager) {
                 try {
-                    // Find JSON block
+                    // Find JSON block - be more precise to avoid trailing text
                     const jsonMatch = response.match(/\{[\s\S]*"action":\s*"callTool"[\s\S]*\}/);
                     if (jsonMatch) {
-                        const toolCall = JSON.parse(jsonMatch[0]);
+                        let jsonStr = jsonMatch[0].trim();
+                        // If there are multiple JSON blocks or nested braces, we need the outermost one
+                        // A simple way to handle trailing text after the last }
+                        let depth = 0;
+                        let firstBrace = -1;
+                        let lastBrace = -1;
+                        for (let i = 0; i < jsonStr.length; i++) {
+                            if (jsonStr[i] === '{') {
+                                if (depth === 0) firstBrace = i;
+                                depth++;
+                            } else if (jsonStr[i] === '}') {
+                                depth--;
+                                if (depth === 0) {
+                                    lastBrace = i;
+                                    break; // Found the end of the first full JSON object
+                                }
+                            }
+                        }
+                        
+                        if (firstBrace !== -1 && lastBrace !== -1) {
+                            jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+                        }
+
+                        const toolCall = JSON.parse(jsonStr);
                         
                         // Merge external confirmation into tool args (only for the first iteration or if specifically passed)
                         const toolArgs = { ...toolCall.args, confirmed: loopCount === 1 ? confirmed : undefined };

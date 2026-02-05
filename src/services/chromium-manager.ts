@@ -657,7 +657,7 @@ export class ChromiumManager {
             const info = this.runningProcesses.get(profileId);
             if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
                 const { username, password } = info.proxyOptions.proxyAuth;
-                if (username && password) {
+                if (username) {
                     console.log(`[CDP] Setting up proxy authentication (Fetch) for profile ${profileId}`);
                     const { Fetch } = client;
                     await Fetch.enable({ handleAuthRequests: true });
@@ -669,7 +669,7 @@ export class ChromiumManager {
                             authChallengeResponse: {
                                 response: 'ProvideCredentials',
                                 username: username,
-                                password: password
+                                password: password || ''
                             }
                         });
                     });
@@ -679,17 +679,19 @@ export class ChromiumManager {
             // Also set basic auth for the browser process level if possible
             if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
                 const { username, password } = info.proxyOptions.proxyAuth;
-                try {
-                    // This is for some older versions or specific implementations
-                    await Network.authenticate({
-                        requestId: 'proxy',
-                        authChallengeResponse: {
-                            response: 'ProvideCredentials',
-                            username,
-                            password
-                        }
-                    }).catch(() => {});
-                } catch(e) {}
+                if (username) {
+                    try {
+                        // This is for some older versions or specific implementations
+                        await Network.authenticate({
+                            requestId: 'proxy',
+                            authChallengeResponse: {
+                                response: 'ProvideCredentials',
+                                username,
+                                password: password || ''
+                            }
+                        }).catch(() => {});
+                    } catch(e) {}
+                }
             }
 
             // Grant Geolocation permissions automatically to avoid prompts and leaks
