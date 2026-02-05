@@ -6,6 +6,7 @@ import { Database } from 'sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { ProfileManager } from './profile-manager';
 import { ProxyManager } from './proxy-manager';
+import { CookieManager } from './cookie-manager';
 import { exec } from 'child_process';
 import util from 'util';
 
@@ -19,6 +20,7 @@ export interface LocalProfileInfo {
     notes?: string;
     proxy?: any;
     userAgent?: string;
+    cookies?: any[];
 }
 
 export class LocalMigrationService {
@@ -27,7 +29,8 @@ export class LocalMigrationService {
     constructor(
         private db: Database,
         private profileManager: ProfileManager,
-        private proxyManager: ProxyManager
+        private proxyManager: ProxyManager,
+        private cookieManager: CookieManager = new CookieManager(db)
     ) {
         const roaming = path.join(os.homedir(), 'AppData', 'Roaming');
         const local = path.join(os.homedir(), 'AppData', 'Local');
@@ -114,6 +117,11 @@ export class LocalMigrationService {
                 const fullPath = path.join(profilesDir, dirName);
                 if ((await fs.stat(fullPath)).isDirectory()) {
                     const profileData = dbData.profiles?.[dirName] || {};
+                    let cookies = [];
+                    if (profileData.cookies && Array.isArray(profileData.cookies)) {
+                        cookies = profileData.cookies;
+                    }
+
                     profiles.push({
                         id: dirName,
                         name: profileData.name || `Dolphin_${dirName}`,
@@ -121,7 +129,8 @@ export class LocalMigrationService {
                         path: fullPath,
                         notes: profileData.notes?.content,
                         userAgent: profileData.useragent?.value,
-                        proxy: profileData.proxy
+                        proxy: profileData.proxy,
+                        cookies: cookies
                     });
                 }
             }
@@ -403,6 +412,22 @@ export class LocalMigrationService {
 
         if (source.browser === 'dolphin') {
             await this.transferDolphinData(source.id, source.path, targetDir);
+            
+            // Re-import cookies from JSON if available (Dolphin specific fix)
+            if (source.cookies && source.cookies.length > 0) {
+                console.log(`[Migration] Importing ${source.cookies.length} cookies for profile ${newProfile.id}`);
+                const cookiesToImport = source.cookies.map(c => ({
+                    name: c.name,
+                    value: c.value,
+                    domain: c.domain,
+                    path: c.path || '/',
+                    expires: c.expirationDate ? c.expirationDate * 1000 : 0,
+                    secure: !!c.secure,
+                    httpOnly: !!c.httpOnly,
+                    sameSite: c.sameSite || 'Lax'
+                }));
+                await this.cookieManager.importCookies(newProfile.id, cookiesToImport as any);
+            }
         } else if (source.browser === 'adspower') {
             await this.transferAdsPowerData(source.path, targetDir);
         } else {
@@ -477,6 +502,35 @@ export class LocalMigrationService {
                 // Using PowerShell's Expand-Archive which is available on Windows
                 await execAsync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${targetDir}' -Force"`);
                 console.log(`✓ Extracted Dolphin data from ${zipPath}`);
+
+                // FOLDER STRUCTURE CORRECTION
+                // Chromium profiles usually expect data in a 'Default' subfolder.
+                // If Dolphin zipped the contents of the profile directly, we need to move them into 'Default'
+                const defaultDir = path.join(targetDir, 'Default');
+                const rootCookies = path.join(targetDir, 'Cookies');
+                const rootPreferences = path.join(targetDir, 'Preferences');
+
+                if ((existsSync(rootCookies) || existsSync(rootPreferences)) && !existsSync(defaultDir)) {
+                    console.log(`[Migration] Detected flat profile structure, moving to Default folder...`);
+                    await fs.mkdir(defaultDir, { recursive: true });
+                    const items = await fs.readdir(targetDir);
+                    for (const item of items) {
+                        if (item === 'Default') continue;
+                        const oldPath = path.join(targetDir, item);
+                        const newPath = path.join(defaultDir, item);
+                        await fs.rename(oldPath, newPath).catch(err => {
+                            console.warn(`Failed to move ${item}:`, err.message);
+                        });
+                    }
+                }
+                
+                // CLEANUP: Remove potentially incompatible encryption keys
+                // 'Local State' in Chromium contains encrypted keys that won't work in a different app/environment.
+                // It's better to let our app generate its own or use the ones from Preferences.
+                const localStatePath = path.join(targetDir, 'Local State');
+                if (existsSync(localStatePath)) {
+                    await fs.unlink(localStatePath).catch(() => {});
+                }
             } catch (e) {
                 console.error(`Failed to extract Dolphin zip:`, e);
             }

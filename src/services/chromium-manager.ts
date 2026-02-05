@@ -9,6 +9,7 @@ import { ExtensionManager } from './extension-manager';
 import { ProxyTunnelManager } from './proxy-tunnel-manager';
 import { IPChecker } from './ip-checker';
 import { ProfileIconService } from './profile-icon-service';
+import { CookieManager } from './cookie-manager';
 
 interface ProcessInfo {
     pid: number;
@@ -904,6 +905,18 @@ export class ChromiumManager {
             const { FingerprintGenerator } = require('./fingerprint-generator');
             const generator = new FingerprintGenerator('');
             const stealthScript = generator.generateInjectionScript(fp as any);
+
+            // Apply Cookies from Database (Primary for migrated profiles)
+            try {
+                const cookieManager = new CookieManager(this.db);
+                const cookies = await cookieManager.getCookies(profileId);
+                if (cookies.length > 0) {
+                    console.log(`[CDP] Applying ${cookies.length} cookies for profile ${profileId}`);
+                    await cookieManager.setCookiesViaCDP(client, cookies);
+                }
+            } catch (cookieErr) {
+                console.warn('Failed to apply cookies via CDP:', cookieErr);
+            }
 
             // Set Hardware Concurrency if available
             if (nav.hardwareConcurrency) {
