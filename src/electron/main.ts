@@ -120,6 +120,14 @@ async function startBackend() {
 }
 
 // App lifecycle
+// Disable GPU hardware acceleration to prevent "GPU process exited unexpectedly" errors on some systems
+app.disableHardwareAcceleration();
+
+// Additional Chromium flags for stability
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+
 app.whenReady().then(async () => {
     try {
         // Start backend first
