@@ -39,6 +39,8 @@ import { getAdvancedProxyManager } = from '../services/advanced-proxy-manager';
 import { getCaptchaSolvingService } = from '../services/captcha-solving.service';
 // Profile versioning service
 import { getProfileVersioningService } = from '../services/profile-versioning.service';
+// Threat monitoring service
+import { getThreatMonitoringService } = from '../services/threat-monitoring.service';
 
 export function createApp(db: Database): Express {
     const app = express();
@@ -92,6 +94,11 @@ export function createApp(db: Database): Express {
     
     // Initialize profile versioning service
     const profileVersioningService = getProfileVersioningService(db);
+    
+    // Initialize threat monitoring service
+    const threatMonitoringService = getThreatMonitoringService(db);
+    // Start threat monitoring
+    threatMonitoringService.start();
     
     const rpaEngine = new RPAEngine(db, jarvisService, extensionManager);
     const jarvisTaskManager = new JarvisTaskManager(db, chromiumManager, rpaEngine, profileManager);
