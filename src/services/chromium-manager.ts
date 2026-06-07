@@ -354,22 +354,66 @@ export class ChromiumManager {
         // Add IP check page as startup URL
         // If we have a proxy or fingerprint to apply, we start with about:blank
         // and navigate later via CDP to prevent race conditions (leaks)
+        
+        // Screen resolution limit - cap to reasonable maximum (fullscreen)
+        // Max supported resolution to prevent oversized windows
+        const MAX_WIDTH = 3840; // 4K
+        const MAX_HEIGHT = 2160;
+        const screenWidth = Math.min(options.windowWidth || 1920, MAX_WIDTH);
+        const screenHeight = Math.min(options.windowHeight || 1080, MAX_HEIGHT);
+        
+        // Reconstruct window-size args with capped values
+        const windowSizeIdx = args.findIndex(a => a.startsWith('--window-size='));
+        if (windowSizeIdx !== -1) {
+            args[windowSizeIdx] = `--window-size=${screenWidth},${screenHeight}`;
+        }
+
         if (!options.restoreTabs) {
             args.push('about:blank');
         }
 
+        // Additional Windows-specific options for taskbar icon customization
+        const profileDir = path.join(userDataDir, 'Default');
+        const iconPath = path.join(profileDir, 'Google Profile Picture.png');
+        
+        if (os.platform() === 'win32') {
+            // Ensure icon exists for colored taskbar icon
+            let profileDataLocal: { name: string } | null = null;
+            try {
+                profileDataLocal = await new Promise<any>((resolve) => {
+                    this.db.get('SELECT name FROM profiles WHERE id = ?', [profileId], (err, row) => resolve(row));
+                });
+            } catch (e) {}
+            
+            if (!fs.existsSync(iconPath) && profileDataLocal) {
+                const hue = ProfileIconService.getHueFromId(profileId);
+                try {
+                    await ProfileIconService.generateIcon(profileDataLocal.name, hue, iconPath, chromiumPath);
+                } catch (e) {
+                    console.warn('Failed to generate profile icon:', e);
+                }
+            }
+        }
+
         // Launch Chromium
-        const process = spawn(chromiumPath, args, {
+        const browserProcess = spawn(chromiumPath, args, {
             detached: true,
             stdio: 'ignore',
-            windowsHide: false // Changed to false to ensure window is visible
+            windowsHide: false, // Changed to false to ensure window is visible
+            env: {
+                ...process.env,
+                // Windows app user model for custom taskbar icon
+                ...(os.platform() === 'win32' ? {
+                    APPIMAGE: iconPath  // Some systems use this for icon
+                } : {})
+            }
         });
 
         // Ensure the process is unref'd if we want it to stay alive
-        if (process.unref) process.unref();
+        if (browserProcess.unref) browserProcess.unref();
 
         const processInfo: ProcessInfo = {
-            pid: process.pid!,
+            pid: browserProcess.pid!,
             devToolsPort,
             tunnelPort,
             proxyOptions: options,
@@ -379,7 +423,7 @@ export class ChromiumManager {
         this.runningProcesses.set(profileId, processInfo);
 
         // Handle process exit
-        process.on('exit', () => {
+        browserProcess.on('exit', () => {
             const info = this.runningProcesses.get(profileId);
             if (info?.cdpClient) {
                 try { info.cdpClient.close(); } catch (e) { }
@@ -512,7 +556,7 @@ export class ChromiumManager {
     }
 
     /**
-     * Open start URLs via CDP
+     * Open start URLs via CDP - navigates the main tab instead of creating new ones
      */
     private async openStartUrls(profileId: string, urls: string[]): Promise<void> {
         const info = this.runningProcesses.get(profileId);
@@ -521,13 +565,33 @@ export class ChromiumManager {
         try {
             const CDP = require('chrome-remote-interface');
             const client = await CDP({ port: info.devToolsPort });
-            const { Target } = client;
+            const { Page, Target } = client;
 
-            for (const url of urls) {
+            // Get the main target (the IP check tab we're already on)
+            const targets = await Target.getTargets();
+            const mainTarget = targets.targetInfos.find((t: any) => 
+                t.url.includes('ip-check.html') || t.type === 'page'
+            );
+
+            if (mainTarget && urls.length > 0 && urls[0].trim()) {
+                // Navigate the main tab to the first start URL
+                const mainClient = await CDP({ port: info.devToolsPort, targetId: mainTarget.targetId });
+                const { Page: MainPage } = mainClient;
+                await MainPage.enable();
+                await MainPage.navigate({ url: urls[0].trim() });
+                console.log(`🌐 Navigating main tab to start URL: ${urls[0].trim()}`);
+                await mainClient.close();
+            }
+
+            // For additional URLs, create new tabs
+            for (let i = 1; i < urls.length; i++) {
+                const url = urls[i];
                 if (url && url.trim()) {
                     await Target.createTarget({ url: url.trim() });
+                    console.log(`🌐 Opening additional start URL: ${url.trim()}`);
                 }
             }
+
             await client.close();
         } catch (error) {
             console.error(`Failed to open start URLs for profile ${profileId}:`, error);

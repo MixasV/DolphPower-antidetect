@@ -51,6 +51,18 @@ export class ProfileManager {
         let safeConfig = options.fingerprintConfig ? { ...options.fingerprintConfig } : {};
         if (safeConfig.timezone) delete safeConfig.timezone;
 
+        // Screen resolution limit - cap to max supported resolution
+        const MAX_SCREEN_WIDTH = 3840; // 4K
+        const MAX_SCREEN_HEIGHT = 2160;
+        if (safeConfig.screen) {
+            if (safeConfig.screen.width && safeConfig.screen.width > MAX_SCREEN_WIDTH) {
+                safeConfig.screen.width = MAX_SCREEN_WIDTH;
+            }
+            if (safeConfig.screen.height && safeConfig.screen.height > MAX_SCREEN_HEIGHT) {
+                safeConfig.screen.height = MAX_SCREEN_HEIGHT;
+            }
+        }
+
         const finalFingerprint = options.fingerprintConfig
             ? this.deepMerge(fingerprint, safeConfig)
             : fingerprint;

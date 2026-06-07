@@ -53,6 +53,10 @@
             background: rgba(16, 185, 129, 0.2);
             border: 1px solid rgba(16, 185, 129, 0.5);
         }
+        .status.warning {
+            background: rgba(245, 158, 60, 0.2);
+            border: 1px solid rgba(245, 158, 60, 0.5);
+        }
         .status.error {
             background: rgba(239, 68, 68, 0.2);
             border: 1px solid rgba(239, 68, 68, 0.5);
@@ -169,8 +173,21 @@
             const urlParams = new URLSearchParams(window.location.search);
             const profileId = urlParams.get('profileId');
             
+            // Get stored proxy IP from backend if available (this is the actual proxy IP that should be shown)
+            let storedProxyIp = null;
+            if (profileId) {
+                try {
+                    const storedIpRes = await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}`);
+                    const storedIpData = await storedIpRes.json();
+                    if (storedIpData.success && storedIpData.data?.profile?.last_checked_ip) {
+                        storedProxyIp = storedIpData.data.profile.last_checked_ip;
+                    }
+                } catch (e) {}
+            }
+            
             try {
                 // Try multiple IP check services - prioritized by data richness
+                // These requests go through the proxy tunnel if active, otherwise direct
                 const services = [
                     { url: 'http://ip-api.com/json/', parse: parseIpApi },
                     { url: 'https://ipapi.co/json/', parse: parseIpApiCo },
@@ -184,7 +201,7 @@
                     { url: 'https://api.ipify.org?format=json', parse: parseIpify }
                 ];
                 
-                let result = null;
+                let detectedIp = null;
                 
                 for (const service of services) {
                     try {
@@ -192,17 +209,56 @@
                         const response = await fetchWithTimeout(service.url);
                         if (response.ok) {
                             const data = await response.json();
-                            result = service.parse(data);
-                            // Ensure we have at least IP and Country for a "rich" result
-                            if (result && result.ip && result.countryCode) break;
+                            detectedIp = service.parse(data);
+                            // Ensure we have at least IP
+                            if (detectedIp && detectedIp.ip) break;
                         }
                     } catch (e) {
                         console.log('Service failed:', service.url, e.message);
                     }
                 }
                 
-                if (result && result.ip) {
-                    showSuccess(result);
+                if (detectedIp && detectedIp.ip) {
+                    // If we have stored proxy IP, compare it with detected IP
+                    // to verify proxy is actually working
+                    if (storedProxyIp && storedProxyIp !== detectedIp.ip) {
+                        // IP mismatch - proxy may not be working correctly
+                        // Show warning but still display the proxy IP
+                        statusEl.className = 'status warning';
+                        statusEl.innerHTML = `
+                            <div class="flag">${getCountryFlag(detectedIp.countryCode || storedProxyIp.countryCode)}</div>
+                            <p style="color: #f59e0b; font-size: 14px;">⚠️ Proxy Mismatch Detected</p>
+                            <div class="ip-display" style="color: #f59e0b;">${storedProxyIp}</div>
+                            <p style="font-size: 12px; color: rgba(255,255,255,0.6);">Detected IP differs from expected proxy IP</p>
+                        `;
+                        
+                        resultEl.style.display = 'block';
+                        resultEl.innerHTML = `
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <div class="info-label">Expected Proxy IP</div>
+                                    <div class="info-value" style="color: #34d399;">${storedProxyIp}</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Detected IP</div>
+                                    <div class="info-value" style="color: #f59e0b;">${detectedIp.ip}</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Country</div>
+                                    <div class="info-value">${detectedIp.country || 'Unknown'}</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Region</div>
+                                    <div class="info-value">${detectedIp.region || 'Unknown'}</div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // Success - show the IP (proxy IP if available, else detected)
+                        const displayIp = storedProxyIp || detectedIp.ip;
+                        showSuccess(displayIp, storedProxyIp ? '(via proxy)' : '');
+                    }
+                    
                     // Update backend with the found IP if profileId is present
                     if (profileId) {
                         try {
@@ -210,48 +266,41 @@
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                    ip: result.ip,
-                                    country: result.countryCode || result.country,
-                                    city: result.city
+                                    ip: detectedIp.ip,
+                                    country: detectedIp.countryCode || detectedIp.country,
+                                    city: detectedIp.city
                                 })
                             });
                             
                             // UNLOCK the proxy tunnel for this profile now that IP is confirmed
                             console.log('Unlocking profile traffic...');
-                            statusEl.innerHTML += '<p style="color: #60a5fa; font-size: 12px; margin-top: 10px;">Verifying proxy and opening your start pages...</p>';
                             
                             await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
                             
-                            // Give some visual feedback that we are done
-                            setTimeout(() => {
-                                const p = statusEl.querySelector('p:last-child');
-                                if (p) p.innerText = 'All set! Your start pages are opening in new tabs.';
-                            }, 2000);
+                            // Give some visual feedback
+                            statusEl.innerHTML += '<p style="color: #60a5fa; font-size: 12px; margin-top: 10px;">Opening your start pages...</p>';
                         } catch (e) {
                             console.error('Failed to update IP or unlock on backend:', e);
                         }
                     }
                 } else {
-                    // Final attempt via our own API (which uses axios on server side, more reliable)
+                    // Final attempt via our own API
                     try {
                         const response = await fetch(`${API_URL}/v1.0/ip/check${profileId ? '?profileId=' + profileId : ''}`);
                         const data = await response.json();
                         if (data.success && data.data && data.data.info) {
-                            showSuccess(data.data.info);
+                            const info = data.data.info;
+                            showSuccess(storedProxyIp || info.ip, storedProxyIp ? '(via proxy)' : '');
                             if (profileId) {
                                 await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
                             }
                             return;
                         }
                     } catch (e) {}
-                    showError('Could not determine IP address', 'All IP check services failed. Your proxy may not be working correctly.');
-                    
-                    // Even on error, we might want to unlock after some time or manual confirmation
-                    // But for security, let's keep it blocked if IP can't be verified?
-                    // User might be stuck. Let's add an unlock to the error state too just in case.
+                    showError('Could not determine IP address', 'All IP check services failed.');
                 }
             } catch (error) {
-                showError('Connection Error', error.message || 'Failed to check IP. Proxy may be offline or misconfigured.');
+                showError('Connection Error', error.message || 'Failed to check IP.');
             }
         }
         
@@ -296,39 +345,27 @@
             return String.fromCodePoint(...codePoints);
         }
         
-        function showSuccess(info) {
+        function showSuccess(ip, modeLabel = '') {
             const statusEl = document.getElementById('status');
             const resultEl = document.getElementById('result');
             
             statusEl.className = 'status success';
             statusEl.innerHTML = `
-                <div class="flag">${getCountryFlag(info.countryCode)}</div>
-                <p style="color: #34d399; font-size: 14px;">Proxy Connected Successfully</p>
-                <div class="ip-display">${info.ip}</div>
+                <div class="flag">✓</div>
+                <p style="color: #34d399; font-size: 14px;">Connection Verified${modeLabel ? ' ' + modeLabel : ''}</p>
+                <div class="ip-display">${ip}</div>
             `;
             
             resultEl.style.display = 'block';
             resultEl.innerHTML = `
                 <div class="info-grid">
                     <div class="info-item">
-                        <div class="info-label">Country</div>
-                        <div class="info-value">${info.country || 'Unknown'}</div>
+                        <div class="info-label">Status</div>
+                        <div class="info-value">Active</div>
                     </div>
                     <div class="info-item">
-                        <div class="info-label">City</div>
-                        <div class="info-value">${info.city || 'Unknown'}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Region</div>
-                        <div class="info-value">${info.region || 'Unknown'}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Timezone</div>
-                        <div class="info-value">${info.timezone || 'Unknown'}</div>
-                    </div>
-                    <div class="info-item" style="grid-column: 1 / -1;">
-                        <div class="info-label">ISP / Organization</div>
-                        <div class="info-value">${info.isp || info.org || 'Unknown'}</div>
+                        <div class="info-label">Proxy Mode</div>
+                        <div class="info-value">${modeLabel || 'Direct'}</div>
                     </div>
                 </div>
             `;
