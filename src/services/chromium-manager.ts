@@ -355,12 +355,21 @@ export class ChromiumManager {
         // If we have a proxy or fingerprint to apply, we start with about:blank
         // and navigate later via CDP to prevent race conditions (leaks)
         
-        // Screen resolution limit - cap to reasonable maximum (fullscreen)
-        // Max supported resolution to prevent oversized windows
-        const MAX_WIDTH = 3840; // 4K
-        const MAX_HEIGHT = 2160;
-        const screenWidth = Math.min(options.windowWidth || 1920, MAX_WIDTH);
-        const screenHeight = Math.min(options.windowHeight || 1080, MAX_HEIGHT);
+        // Screen resolution limit - cap to current screen resolution
+        let maxScreenWidth = 3840, maxScreenHeight = 2160;
+        try {
+            if (os.platform() === 'win32') {
+                const { execSync } = require('child_process');
+                const output = execSync(`powershell "(Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Where-Object {$_.Primary -eq $true} | Select-Object -ExpandProperty Bounds | ForEach-Object {'$($_.Width) $($_.Height)' })"`, { encoding: 'utf8' });
+                const match = output.trim().match(/(\d+)\s+(\d+)/);
+                if (match) {
+                    maxScreenWidth = parseInt(match[1]);
+                    maxScreenHeight = parseInt(match[2]);
+                }
+            }
+        } catch (e) { }
+        const screenWidth = Math.min(options.windowWidth || 1920, maxScreenWidth);
+        const screenHeight = Math.min(options.windowHeight || 1080, maxScreenHeight);
         
         // Reconstruct window-size args with capped values
         const windowSizeIdx = args.findIndex(a => a.startsWith('--window-size='));

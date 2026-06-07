@@ -25,10 +25,7 @@
             text-align: center;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        .logo {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
+        .logo { font-size: 48px; margin-bottom: 10px; }
         h1 {
             font-size: 28px;
             margin-bottom: 5px;
@@ -36,99 +33,34 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .subtitle {
-            color: rgba(255,255,255,0.6);
-            margin-bottom: 30px;
-        }
-        .status {
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-        }
-        .status.loading {
-            background: rgba(59, 130, 246, 0.2);
-            border: 1px solid rgba(59, 130, 246, 0.5);
-        }
-        .status.success {
-            background: rgba(16, 185, 129, 0.2);
-            border: 1px solid rgba(16, 185, 129, 0.5);
-        }
-        .status.warning {
-            background: rgba(245, 158, 60, 0.2);
-            border: 1px solid rgba(245, 158, 60, 0.5);
-        }
-        .status.error {
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid rgba(239, 68, 68, 0.5);
-        }
+        .subtitle { color: rgba(255,255,255,0.6); margin-bottom: 30px; }
+        .status { padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+        .status.loading { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); }
+        .status.success { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); }
+        .status.warning { background: rgba(245, 158, 60, 0.2); border: 1px solid rgba(245, 158, 60, 0.5); }
+        .status.error { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); }
         .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(255,255,255,0.2);
-            border-top-color: #60a5fa;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.2);
+            border-top-color: #60a5fa; border-radius: 50%;
+            animation: spin 1s linear infinite; margin: 0 auto 15px;
         }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .ip-display {
-            font-size: 36px;
-            font-weight: bold;
-            color: #60a5fa;
-            margin: 15px 0;
-        }
-        .info-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            text-align: left;
-            margin-top: 20px;
-        }
-        .info-item {
-            background: rgba(255,255,255,0.05);
-            padding: 12px;
-            border-radius: 8px;
-        }
-        .info-label {
-            font-size: 11px;
-            color: rgba(255,255,255,0.5);
-            text-transform: uppercase;
-            margin-bottom: 4px;
-        }
-        .info-value {
-            font-size: 14px;
-            color: white;
-        }
-        .error-message {
-            font-size: 18px;
-            color: #f87171;
-        }
-        .error-details {
-            font-size: 13px;
-            color: rgba(255,255,255,0.6);
-            margin-top: 10px;
-        }
-        .flag {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .ip-display { font-size: 36px; font-weight: bold; color: #60a5fa; margin: 15px 0; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; text-align: left; margin-top: 20px; }
+        .info-item { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; }
+        .info-label { font-size: 11px; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-bottom: 4px; }
+        .info-value { font-size: 14px; color: white; }
+        .error-message { font-size: 18px; color: #f87171; }
+        .error-details { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 10px; }
+        .flag { font-size: 48px; margin-bottom: 10px; }
         .close-btn {
-            margin-top: 25px;
-            padding: 12px 30px;
+            margin-top: 25px; padding: 12px 30px;
             background: linear-gradient(135deg, #3b82f6, #2563eb);
-            border: none;
-            border-radius: 8px;
-            color: white;
-            font-size: 16px;
-            cursor: pointer;
+            border: none; border-radius: 8px; color: white;
+            font-size: 16px; cursor: pointer;
             transition: transform 0.2s, background 0.2s;
         }
-        .close-btn:hover {
-            transform: scale(1.05);
-            background: linear-gradient(135deg, #60a5fa, #3b82f6);
-        }
+        .close-btn:hover { transform: scale(1.05); background: linear-gradient(135deg, #60a5fa, #3b82f6); }
     </style>
 </head>
 <body>
@@ -136,17 +68,13 @@
         <div class="logo">🐬</div>
         <h1>DolfPower</h1>
         <p class="subtitle">IP & Location Check</p>
-        
         <div id="status" class="status loading">
             <div class="spinner"></div>
             <p>Checking your IP address...</p>
         </div>
-        
         <div id="result" style="display: none;"></div>
-        
         <button class="close-btn" onclick="window.location.href='https://www.google.com'">Continue Browsing</button>
     </div>
-
     <script>
         const API_URL = 'http://127.0.0.1:3001';
         
@@ -155,16 +83,9 @@
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), timeout);
             try {
-                const response = await fetch(resource, {
-                    ...options,
-                    signal: controller.signal
-                });
-                clearTimeout(id);
-                return response;
-            } catch (e) {
-                clearTimeout(id);
-                throw e;
-            }
+                const response = await fetch(resource, { ...options, signal: controller.signal });
+                clearTimeout(id); return response;
+            } catch (e) { clearTimeout(id); throw e; }
         }
 
         async function checkIP() {
@@ -172,109 +93,42 @@
             const resultEl = document.getElementById('result');
             const urlParams = new URLSearchParams(window.location.search);
             const profileId = urlParams.get('profileId');
-            
-            // Get stored proxy IP from backend if available (this is the actual proxy IP that should be shown)
-            let storedProxyIp = null;
-            if (profileId) {
-                try {
-                    const storedIpRes = await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}`);
-                    const storedIpData = await storedIpRes.json();
-                    if (storedIpData.success && storedIpData.data?.profile?.last_checked_ip) {
-                        storedProxyIp = storedIpData.data.profile.last_checked_ip;
-                    }
-                } catch (e) {}
-            }
-            
+
             try {
-                // Try multiple IP check services - prioritized by data richness
-                // These requests go through the proxy tunnel if active, otherwise direct
                 const services = [
                     { url: 'http://ip-api.com/json/', parse: parseIpApi },
                     { url: 'https://ipapi.co/json/', parse: parseIpApiCo },
-                    { url: 'https://ip.nf/me.json', parse: (data) => ({ 
-                        ip: data.ip.ip, 
-                        country: data.ip.country, 
-                        countryCode: data.ip.country_code,
-                        city: data.ip.city,
-                        isp: data.ip.asn
-                    }) },
+                    { url: 'https://ip.nf/me.json', parse: (data) => ({ ip: data.ip.ip, country: data.ip.country, countryCode: data.ip.country_code, city: data.ip.city }) },
                     { url: 'https://api.ipify.org?format=json', parse: parseIpify }
                 ];
                 
                 let detectedIp = null;
-                
                 for (const service of services) {
                     try {
-                        console.log('Checking service:', service.url);
                         const response = await fetchWithTimeout(service.url);
                         if (response.ok) {
                             const data = await response.json();
                             detectedIp = service.parse(data);
-                            // Ensure we have at least IP
                             if (detectedIp && detectedIp.ip) break;
                         }
-                    } catch (e) {
-                        console.log('Service failed:', service.url, e.message);
-                    }
+                    } catch (e) {}
                 }
                 
                 if (detectedIp && detectedIp.ip) {
-                    // If we have stored proxy IP, compare it with detected IP
-                    // to verify proxy is actually working
-                    if (storedProxyIp && storedProxyIp !== detectedIp.ip) {
-                        // IP mismatch - proxy not working correctly
-                        // Show error and do NOT unlock - start_urls will not open
-                        statusEl.className = 'status error';
-                        statusEl.innerHTML = `
-                            <div class="flag">❌</div>
-                            <p style="color: #ef4444; font-size: 14px;">Proxy Check Failed</p>
-                            <div class="ip-display" style="color: #ef4444;">Proxy verification failed</div>
-                            <p style="font-size: 12px; color: rgba(255,255,255,0.6);">Expected: ${storedProxyIp} | Detected: ${detectedIp.ip}</p>
-                        `;
-                        
-                        resultEl.style.display = 'block';
-                        resultEl.innerHTML = `
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <div class="info-label">Expected Proxy IP</div>
-                                    <div class="info-value" style="color: #34d399;">${storedProxyIp}</div>
-                                </div>
-                                <div class="info-item">
-                                    <div class="info-label">Detected IP</div>
-                                    <div class="info-value" style="color: #f59e0b;">${detectedIp.ip}</div>
-                                </div>
-                                <div class="info-item">
-                                    <div class="info-label">Status</div>
-                                    <div class="info-value" style="color: #ef4444;">Proxy not working</div>
-                                </div>
-                            </div>
-                        `;
-                        
-                        // Update backend with error status (no unlock)
-                        if (profileId) {
-                            try {
-                                await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/ip-update`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        ip: detectedIp.ip,
-                                        country: detectedIp.countryCode || detectedIp.country,
-                                        city: detectedIp.city,
-                                        proxy_error: true
-                                    })
-                                });
-                            } catch (e) {
-                                console.error('Failed to update IP on backend:', e);
-                            }
-                        }
-                        // Do NOT unlock - start_urls should not open when proxy fails
-                        return;
-                    } else {
-                        // Success - show the IP (proxy IP if available, else detected)
-                        const displayIp = storedProxyIp || detectedIp.ip;
-                        showSuccess(displayIp, storedProxyIp ? '(via proxy)' : '');
-                        // Update backend with the found IP if profileId is present
-                        if (profileId) {
+                    // Get proxy info to check if we need to verify proxy
+                    let hasProxy = false;
+                    if (profileId) {
+                        try {
+                            const profileRes = await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}`);
+                            const profileData = await profileRes.json();
+                            hasProxy = profileData.success && profileData.data?.profile?.proxy_id;
+                        } catch (e) {}
+                    }
+                    
+                    showSuccess(detectedIp.ip, hasProxy ? '(via proxy)' : '');
+                    
+                    // Update backend
+                    if (profileId) {
                         try {
                             await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/ip-update`, {
                                 method: 'POST',
@@ -285,117 +139,42 @@
                                     city: detectedIp.city
                                 })
                             });
-                            
-                            // UNLOCK the proxy tunnel for this profile now that IP is confirmed
-                            console.log('Unlocking profile traffic...');
-                            
                             await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
-                            
-                            // Give some visual feedback
-                            statusEl.innerHTML += '<p style="color: #60a5fa; font-size: 12px; margin-top: 10px;">Opening your start pages...</p>';
                         } catch (e) {
-                            console.error('Failed to update IP or unlock on backend:', e);
+                            console.error('Failed to update IP or unlock:', e);
                         }
                     }
                 } else {
-                    // Final attempt via our own API
-                    try {
-                        const response = await fetch(`${API_URL}/v1.0/ip/check${profileId ? '?profileId=' + profileId : ''}`);
-                        const data = await response.json();
-                        if (data.success && data.data && data.data.info) {
-                            const info = data.data.info;
-                            showSuccess(storedProxyIp || info.ip, storedProxyIp ? '(via proxy)' : '');
-                            if (profileId) {
-                                await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
-                            }
-                            return;
-                        }
-                    } catch (e) {}
                     showError('Could not determine IP address', 'All IP check services failed.');
                 }
             } catch (error) {
                 showError('Connection Error', error.message || 'Failed to check IP.');
             }
         }
-        
+
         function parseIpApi(data) {
             if (data.status === 'fail') return null;
-            return {
-                ip: data.query,
-                country: data.country,
-                countryCode: data.countryCode,
-                city: data.city,
-                region: data.regionName || data.region,
-                timezone: data.timezone,
-                isp: data.isp,
-                org: data.org
-            };
+            return { ip: data.query, country: data.country, countryCode: data.countryCode, city: data.city, region: data.regionName, isp: data.isp };
         }
-        
         function parseIpApiCo(data) {
             if (data.error) return null;
-            return {
-                ip: data.ip,
-                country: data.country_name,
-                countryCode: data.country_code,
-                city: data.city,
-                region: data.region,
-                timezone: data.timezone,
-                isp: data.org,
-                org: data.org
-            };
+            return { ip: data.ip, country: data.country_name, countryCode: data.country_code, city: data.city, region: data.region };
         }
-        
-        function parseIpify(data) {
-            return { ip: data.ip };
-        }
-        
+        function parseIpify(data) { return { ip: data.ip }; }
         function getCountryFlag(countryCode) {
             if (!countryCode || countryCode.length !== 2) return '🌍';
-            const codePoints = countryCode
-                .toUpperCase()
-                .split('')
-                .map(char => 127397 + char.charCodeAt(0));
-            return String.fromCodePoint(...codePoints);
+            return String.fromCodePoint(...countryCode.toUpperCase().split('').map(c => 127397 + c.charCodeAt(0)));
         }
-        
         function showSuccess(ip, modeLabel = '') {
-            const statusEl = document.getElementById('status');
-            const resultEl = document.getElementById('result');
-            
-            statusEl.className = 'status success';
-            statusEl.innerHTML = `
-                <div class="flag">✓</div>
-                <p style="color: #34d399; font-size: 14px;">Connection Verified${modeLabel ? ' ' + modeLabel : ''}</p>
-                <div class="ip-display">${ip}</div>
-            `;
-            
-            resultEl.style.display = 'block';
-            resultEl.innerHTML = `
-                <div class="info-grid">
-                    <div class="info-item">
-                        <div class="info-label">Status</div>
-                        <div class="info-value">Active</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Proxy Mode</div>
-                        <div class="info-value">${modeLabel || 'Direct'}</div>
-                    </div>
-                </div>
-            `;
+            document.getElementById('status').className = 'status success';
+            document.getElementById('status').innerHTML = `<div class="flag">✓</div><p style="color: #34d399; font-size: 14px;">Connection Verified${modeLabel ? ' ' + modeLabel : ''}</p><div class="ip-display">${ip}</div>`;
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('result').innerHTML = `<div class="info-grid"><div class="info-item"><div class="info-label">Status</div><div class="info-value">Active</div></div><div class="info-item"><div class="info-label">Proxy Mode</div><div class="info-value">${modeLabel || 'Direct'}</div></div></div>`;
         }
-        
         function showError(title, details) {
-            const statusEl = document.getElementById('status');
-            statusEl.className = 'status error';
-            statusEl.innerHTML = `
-                <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
-                <div class="error-message">${title}</div>
-                <div class="error-details">${details}</div>
-            `;
+            document.getElementById('status').className = 'status error';
+            document.getElementById('status').innerHTML = `<div style="font-size: 48px; margin-bottom: 15px;">⚠️</div><div class="error-message">${title}</div><div class="error-details">${details}</div>`;
         }
-        
-        // Start check on load
         checkIP();
     </script>
 </body>

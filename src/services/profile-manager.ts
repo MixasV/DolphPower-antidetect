@@ -346,8 +346,13 @@ export class ProfileManager {
     async updateProfile(id: string, updates: Partial<Profile>): Promise<void> {
         const fields: string[] = [];
         const values: any[] = [];
+        // Normalize start_urls from array to newline-separated string
+        const normalizedUpdates = { ...updates };
+        if (Array.isArray(normalizedUpdates.start_urls)) {
+            normalizedUpdates.start_urls = normalizedUpdates.start_urls.join('\n');
+        }
 
-        for (const [key, value] of Object.entries(updates)) {
+        for (const [key, value] of Object.entries(normalizedUpdates)) {
             if (key === 'id') continue;
             fields.push(`${key} = ?`);
             values.push(value);
