@@ -588,15 +588,13 @@ $Shortcut.Save()
             const client = await CDP({ port: info.devToolsPort });
             const { Page, Target } = client;
 
-            // Get the main target (the IP check tab we're already on)
+            // Get any page target (first available tab)
             const targets = await Target.getTargets();
-            const mainTarget = targets.targetInfos.find((t: any) => 
-                t.url.includes('ip-check.html') || t.type === 'page'
-            );
+            const pageTarget = targets.targetInfos.find((t: any) => t.type === 'page');
 
-            if (mainTarget && urls.length > 0 && urls[0].trim()) {
+            if (pageTarget && urls.length > 0 && urls[0].trim()) {
                 // Navigate the main tab to the first start URL
-                const mainClient = await CDP({ port: info.devToolsPort, targetId: mainTarget.targetId });
+                const mainClient = await CDP({ port: info.devToolsPort, targetId: pageTarget.targetId });
                 const { Page: MainPage } = mainClient;
                 await MainPage.enable();
                 await MainPage.navigate({ url: urls[0].trim() });
@@ -1049,6 +1047,14 @@ $Shortcut.Save()
             const ipCheckTarget = targets.targetInfos.find((t: any) => t.url.includes('ip-check.html'));
             if (ipCheckTarget) {
                 await Target.activateTarget({ targetId: ipCheckTarget.targetId });
+            }
+
+            // Open start URLs immediately for profiles without proxy (no tunnel blocking)
+            const procInfo = this.runningProcesses.get(profileId);
+            if (procInfo && !procInfo.proxyOptions?.proxy && procInfo.startUrls && procInfo.startUrls.length > 0) {
+                console.log(`🌐 No proxy configured, opening ${procInfo.startUrls.length} start URLs`);
+                await this.openStartUrls(profileId, procInfo.startUrls);
+                procInfo.startUrls = [];
             }
 
             // DO NOT close client here, it will be closed in terminateProfile or on exit
