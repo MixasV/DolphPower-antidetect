@@ -573,6 +573,25 @@ html, body {
     text-align: right;
 }
 
+/* ===== Profile Icon ===== */
+.profile-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    color: #fff;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+.profile-icon-container {
+    display: flex;
+    align-items: center;
+}
+
 /* ===== Profile Row Elements ===== */
 .profile-name {
     font-weight: 500;

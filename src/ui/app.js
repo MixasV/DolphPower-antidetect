@@ -583,9 +583,12 @@ function renderProfiles() {
                     <span class="status-dot ${profile.status || 'new'}"></span>
                 </td>
                 <td>
-                    <div class="profile-name">
-                        ${escapeHtml(profile.name)}
-                        ${isRunning ? `<span class="running-badge">${t('profiles.running')}</span>` : ''}
+                    <div class="profile-icon-container">
+                        ${getProfileIcon(profile.name)}
+                        <div class="profile-name">
+                            ${escapeHtml(profile.name)}
+                            ${isRunning ? `<span class="running-badge">${t('profiles.running')}</span>` : ''}
+                        </div>
                     </div>
                     ${tags.length > 0 ? `
                         <div class="profile-tags">
@@ -652,6 +655,14 @@ function renderProfiles() {
     
     lucide.createIcons();
     updateBulkActions();
+}
+
+function getProfileIcon(name) {
+    const colors = ['#4f46e5', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+    const firstChar = (name || '?').charAt(0).toUpperCase();
+    const colorIndex = name ? name.charCodeAt(0) % colors.length : 0;
+    const bgColor = colors[colorIndex];
+    return `<span class="profile-icon" style="background-color: ${bgColor}">${firstChar}</span>`;
 }
 
 function getCountryFlag(countryCode) {
