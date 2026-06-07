@@ -408,6 +408,23 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_safe_tools TEXT`, () => {}); // JSON array of allowed tool names
           db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_requires_2fa INTEGER DEFAULT 1`, () => {});
 
+          // Profile Versions table for versioning and rollback
+          db.run(`
+            CREATE TABLE IF NOT EXISTS profile_versions (
+              id TEXT PRIMARY KEY,
+              profile_id TEXT NOT NULL,
+              version_number INTEGER NOT NULL,
+              created_at INTEGER NOT NULL,
+              profile_data TEXT NOT NULL, -- JSON string of profile
+              fingerprint_data TEXT NOT NULL, -- JSON string of fingerprint config
+              FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+            )
+          `);
+
+          // Migration: Add index for faster lookups
+          db.run(`CREATE INDEX IF NOT EXISTS idx_profile_versions_profile_id ON profile_versions(profile_id)`, () => {});
+          db.run(`CREATE INDEX IF NOT EXISTS idx_profile_versions_version ON profile_versions(profile_id, version_number)`, () => {});
+
           console.log('✓ Database initialized with comprehensive fingerprint, Jarvis and Auth schema');
           resolve(db);
         });

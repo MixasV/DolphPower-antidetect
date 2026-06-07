@@ -30,9 +30,15 @@ import { SecurityService } from '../services/security-service';
 import { LocalMigrationService } from '../services/local-migration-service';
 // New security services for wallet protection
 import { WalletSecurityService } from '../services/wallet-security.service';
-import { ClipboardProtectionService } from '../services/clipboard-protection.service';
-import { ScreenProtectionService } from '../services/screen-protection.service';
+import { getClipboardProtectionService } from '../services/clipboard-protection.service';
+import { getScreenProtectionService } from '../services/screen-protection.service';
 import { EmergencyLockoutService } from '../services/emergency-lockout.service';
+// Advanced proxy management
+import { getAdvancedProxyManager } = from '../services/advanced-proxy-manager';
+// Captcha solving service
+import { getCaptchaSolvingService } = from '../services/captcha-solving.service';
+// Profile versioning service
+import { getProfileVersioningService } = from '../services/profile-versioning.service';
 
 export function createApp(db: Database): Express {
     const app = express();
@@ -58,15 +64,35 @@ export function createApp(db: Database): Express {
     const walletSecurityService = new WalletSecurityService();
     
     // Initialize clipboard protection service
-    const clipboardProtectionService = ClipboardProtectionService.getClipboardProtectionService();
+    const clipboardProtectionService = getClipboardProtectionService();
     // Start monitoring clipboard for sensitive data
     clipboardProtectionService.startMonitoring();
     
     // Initialize screen protection service
-    const screenProtectionService = ScreenProtectionService.getScreenProtectionService();
+    const screenProtectionService = getScreenProtectionService();
     
     // Initialize emergency lockout service
     const emergencyLockoutService = EmergencyLockoutService.getInstance();
+    
+    // Initialize advanced proxy manager
+    const advancedProxyManager = getAdvancedProxyManager(db);
+    
+    // Start periodic proxy testing (every 5 minutes)
+    setInterval(async () => {
+        try {
+            await advancedProxyManager.testAllProxies();
+            console.log('Proxy health check completed');
+        } catch (error) {
+            console.error('Error during proxy health check:', error);
+        }
+    }, 300000); // 5 minutes
+    
+    // Initialize captcha solving service
+    const captchaSolvingService = getCaptchaSolvingService(db);
+    
+    // Initialize profile versioning service
+    const profileVersioningService = getProfileVersioningService(db);
+    
     const rpaEngine = new RPAEngine(db, jarvisService, extensionManager);
     const jarvisTaskManager = new JarvisTaskManager(db, chromiumManager, rpaEngine, profileManager);
     const telegramService = new TelegramService();
