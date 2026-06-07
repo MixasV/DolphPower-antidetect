@@ -389,6 +389,18 @@ export class ChromiumManager {
                 const hue = ProfileIconService.getHueFromId(profileId);
                 try {
                     await ProfileIconService.generateIcon(profileDataLocal.name, hue, iconPath, chromiumPath);
+                    // Create a shortcut with the custom icon for taskbar distinction
+                    const { exec } = require('child_process');
+                    const shortcutPath = path.join(profileDir, `${profileId}.lnk`);
+                    const psScript = `
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut('${shortcutPath.replace(/\\/g, '\\\\')}')
+$Shortcut.TargetPath = '${chromiumPath.replace(/\\/g, '\\\\')}'
+$Shortcut.Arguments = '--profile-directory="Default" --user-data-dir="${userDataDir.replace(/\\/g, '\\\\')}"'
+$Shortcut.IconLocation = '${iconPath.replace(/\\/g, '\\\\')},0'
+$Shortcut.Save()
+`;
+                    exec(`powershell -Command "${psScript}"`, { windowsHide: true });
                 } catch (e) {
                     console.warn('Failed to generate profile icon:', e);
                 }
@@ -724,9 +736,14 @@ export class ChromiumManager {
             const ipCheckUrl = 'file:///' + path.join(__dirname, '..', 'ui', 'ip-check.html').replace(/\\/g, '/');
             const ipCheckUrlWithId = `${ipCheckUrl}?profileId=${profileId}`;
             
-            // Store start URLs for later (after proxy verification)
+            // Store start URLs for later (after proxy verification), normalize URLs
             if (info && startUrls && startUrls.length > 0) {
-                info.startUrls = startUrls.filter(u => u && u.trim());
+                info.startUrls = startUrls.map(u => {
+                    const trimmed = (u || '').trim();
+                    if (!trimmed) return '';
+                    // Add protocol if missing
+                    return trimmed.match(/^https?:\/\//i) ? trimmed : `https://${trimmed}`;
+                }).filter(u => u);
             }
 
             console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);

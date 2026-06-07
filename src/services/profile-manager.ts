@@ -51,15 +51,26 @@ export class ProfileManager {
         let safeConfig = options.fingerprintConfig ? { ...options.fingerprintConfig } : {};
         if (safeConfig.timezone) delete safeConfig.timezone;
 
-        // Screen resolution limit - cap to max supported resolution
-        const MAX_SCREEN_WIDTH = 3840; // 4K
-        const MAX_SCREEN_HEIGHT = 2160;
-        if (safeConfig.screen) {
-            if (safeConfig.screen.width && safeConfig.screen.width > MAX_SCREEN_WIDTH) {
-                safeConfig.screen.width = MAX_SCREEN_WIDTH;
+        // Screen resolution limit - cap to current screen resolution
+        let maxScreenWidth = 3840, maxScreenHeight = 2160;
+        try {
+            const { execSync } = require('child_process');
+            if (process.platform === 'win32') {
+                // Get screen resolution using .NET
+                const output = execSync('powershell "(Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Where-Object {$_.Primary -eq $true} | Select-Object -ExpandProperty Bounds | ForEach-Object {\"$($_.Width) $($_.Height)\" })"', { encoding: 'utf8' });
+                const match = output.trim().match(/(\d+)\s+(\d+)/);
+                if (match) {
+                    maxScreenWidth = parseInt(match[1]);
+                    maxScreenHeight = parseInt(match[2]);
+                }
             }
-            if (safeConfig.screen.height && safeConfig.screen.height > MAX_SCREEN_HEIGHT) {
-                safeConfig.screen.height = MAX_SCREEN_HEIGHT;
+        } catch (e) { /* Use defaults */ }
+        if (safeConfig.screen) {
+            if (safeConfig.screen.width && safeConfig.screen.width > maxScreenWidth) {
+                safeConfig.screen.width = maxScreenWidth;
+            }
+            if (safeConfig.screen.height && safeConfig.screen.height > maxScreenHeight) {
+                safeConfig.screen.height = maxScreenHeight;
             }
         }
 
@@ -360,22 +371,25 @@ export class ProfileManager {
         });
     }
 
-    async updateProfileIP(id: string, info: { ip: string; country: string; city: string }): Promise<void> {
+    async updateProfileIP(id: string, info: { ip: string; country: string; city: string; proxy_error?: boolean }): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.db.run(
-                `UPDATE profiles SET 
-          last_checked_ip = ?, 
-          last_checked_country = ?, 
-          last_checked_city = ?, 
-          last_checked_time = ?,
-          updated_at = ? 
-        WHERE id = ?`,
-                [info.ip, info.country, info.city, Date.now(), Date.now(), id],
-                (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
-            );
+            const fields = [];
+            const values = [];
+            if (info.proxy_error) {
+                // When proxy error, just update timestamp but don't change IP
+                values.push(Date.now());
+            } else {
+                values.push(info.ip, info.country, info.city, Date.now());
+            }
+            values.push(Date.now());
+            values.push(id);
+            const sql = info.proxy_error
+                ? `UPDATE profiles SET last_checked_time = ?, updated_at = ? WHERE id = ?`
+                : `UPDATE profiles SET last_checked_ip = ?, last_checked_country = ?, last_checked_city = ?, last_checked_time = ?, updated_at = ? WHERE id = ?`;
+            this.db.run(sql, values, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
         });
     }
 

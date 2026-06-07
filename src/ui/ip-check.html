@@ -222,14 +222,14 @@
                     // If we have stored proxy IP, compare it with detected IP
                     // to verify proxy is actually working
                     if (storedProxyIp && storedProxyIp !== detectedIp.ip) {
-                        // IP mismatch - proxy may not be working correctly
-                        // Show warning but still display the proxy IP
-                        statusEl.className = 'status warning';
+                        // IP mismatch - proxy not working correctly
+                        // Show error and do NOT unlock - start_urls will not open
+                        statusEl.className = 'status error';
                         statusEl.innerHTML = `
-                            <div class="flag">${getCountryFlag(detectedIp.countryCode || storedProxyIp.countryCode)}</div>
-                            <p style="color: #f59e0b; font-size: 14px;">⚠️ Proxy Mismatch Detected</p>
-                            <div class="ip-display" style="color: #f59e0b;">${storedProxyIp}</div>
-                            <p style="font-size: 12px; color: rgba(255,255,255,0.6);">Detected IP differs from expected proxy IP</p>
+                            <div class="flag">❌</div>
+                            <p style="color: #ef4444; font-size: 14px;">Proxy Check Failed</p>
+                            <div class="ip-display" style="color: #ef4444;">Proxy verification failed</div>
+                            <p style="font-size: 12px; color: rgba(255,255,255,0.6);">Expected: ${storedProxyIp} | Detected: ${detectedIp.ip}</p>
                         `;
                         
                         resultEl.style.display = 'block';
@@ -244,23 +244,37 @@
                                     <div class="info-value" style="color: #f59e0b;">${detectedIp.ip}</div>
                                 </div>
                                 <div class="info-item">
-                                    <div class="info-label">Country</div>
-                                    <div class="info-value">${detectedIp.country || 'Unknown'}</div>
-                                </div>
-                                <div class="info-item">
-                                    <div class="info-label">Region</div>
-                                    <div class="info-value">${detectedIp.region || 'Unknown'}</div>
+                                    <div class="info-label">Status</div>
+                                    <div class="info-value" style="color: #ef4444;">Proxy not working</div>
                                 </div>
                             </div>
                         `;
+                        
+                        // Update backend with error status (no unlock)
+                        if (profileId) {
+                            try {
+                                await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/ip-update`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        ip: detectedIp.ip,
+                                        country: detectedIp.countryCode || detectedIp.country,
+                                        city: detectedIp.city,
+                                        proxy_error: true
+                                    })
+                                });
+                            } catch (e) {
+                                console.error('Failed to update IP on backend:', e);
+                            }
+                        }
+                        // Do NOT unlock - start_urls should not open when proxy fails
+                        return;
                     } else {
                         // Success - show the IP (proxy IP if available, else detected)
                         const displayIp = storedProxyIp || detectedIp.ip;
                         showSuccess(displayIp, storedProxyIp ? '(via proxy)' : '');
-                    }
-                    
-                    // Update backend with the found IP if profileId is present
-                    if (profileId) {
+                        // Update backend with the found IP if profileId is present
+                        if (profileId) {
                         try {
                             await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/ip-update`, {
                                 method: 'POST',

@@ -1396,8 +1396,8 @@ export function createApp(db: Database): Express {
     }));
 
     app.post('/v1.0/browser_profiles/:id/ip-update', asyncHandler(async (req: Request, res: Response) => {
-        const { ip, country, city } = req.body;
-        await profileManager.updateProfileIP(req.params.id, { ip, country, city });
+        const { ip, country, city, proxy_error } = req.body;
+        await profileManager.updateProfileIP(req.params.id, { ip, country, city, proxy_error });
         res.json({ success: true });
     }));
 
