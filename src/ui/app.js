@@ -463,9 +463,17 @@ function switchSection(section) {
         groups: t('groups.title'),
         scenarios: t('rpa.title'),
         jarvis: t('nav.jarvis'),
-        trash: t('nav.trash')
+        trash: t('nav.trash'),
+        security: t('nav.security')
     };
     document.querySelector('.page-title').textContent = titles[section] || section;
+    
+    // Show/Hide header buttons based on section
+    // New Profile, Many Profiles, Import/Export only show on Profiles tab
+    const profileButtons = document.querySelectorAll('#header-btn-new-profile, #header-btn-many-profiles, #header-btn-import, #header-btn-export');
+    profileButtons.forEach(btn => {
+        btn.style.display = section === 'profiles' ? '' : 'none';
+    });
     
     // Load section data
     if (section === 'profiles') loadProfiles();
@@ -688,7 +696,17 @@ function getGroupInfo(groupId) {
 // ===== Profile Actions =====
 async function startProfile(id) {
     try {
-        await fetch(`${API_URL}/v1.0/browser_profiles/${id}/start`);
+        const response = await fetch(`${API_URL}/v1.0/browser_profiles/${id}/start`);
+        const data = await response.json();
+        
+        if (!response.ok || data.error) {
+            if (data.proxy_error) {
+                showToast(t('profiles.proxyFailed') || `Proxy connection failed: ${data.error}`, 'error');
+            } else {
+                showToast(data.error || t('common.error'), 'error');
+            }
+            return;
+        }
         showToast(t('profiles.started'), 'success');
         setTimeout(loadProfiles, 1000);
     } catch (error) {
@@ -786,15 +804,25 @@ function updateBulkActions() {
 async function bulkStartProfiles() {
     const ids = Array.from(selectedProfiles);
     let started = 0;
+    let proxyFailed = 0;
     
     for (const id of ids) {
         try {
-            await fetch(`${API_URL}/v1.0/browser_profiles/${id}/start`);
-            started++;
+            const response = await fetch(`${API_URL}/v1.0/browser_profiles/${id}/start`);
+            const data = await response.json();
+            if (response.ok && !data.proxy_error) {
+                started++;
+            } else if (data.proxy_error) {
+                proxyFailed++;
+            }
         } catch (e) {}
     }
     
-    showToast(`${started} ${t('profiles.started')}`, 'success');
+    if (proxyFailed > 0) {
+        showToast(`${started} started, ${proxyFailed} failed (proxy connection)`, 'warning');
+    } else {
+        showToast(`${started} ${t('profiles.started')}`, 'success');
+    }
     setTimeout(loadProfiles, 2000);
 }
 
@@ -1168,21 +1196,31 @@ function renderExtensions() {
         return;
     }
     
+    // Generate random pastel colors for extension icons
+    const getColorForExtension = (id) => {
+        const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#f97316', '#84cc16'];
+        const hash = id.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0);
+        return colors[Math.abs(hash) % colors.length];
+    };
+
     grid.innerHTML = extensions.map(ext => {
         const isSelected = selectedExtensions.has(ext.id);
+        const iconColor = getColorForExtension(ext.id);
         return `
             <div class="extension-card ${isSelected ? 'selected' : ''}" onclick="toggleExtensionSelection('${ext.id}', event)">
+                <div class="extension-card-icon" style="background: ${iconColor};">
+                    <i data-lucide="puzzle" style="color: white;"></i>
+                </div>
+                <div class="extension-card-content">
+                    <div>
+                        <div class="extension-card-name">${escapeHtml(ext.name)}</div>
+                        <div class="extension-card-path" title="${escapeHtml(ext.path)}">${escapeHtml(ext.path)}</div>
+                    </div>
+                </div>
                 <div class="extension-selection">
                     <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleExtensionSelection('${ext.id}', event)">
                 </div>
-                <div class="extension-icon">
-                    <i data-lucide="puzzle"></i>
-                </div>
-                <div class="extension-info">
-                    <div class="extension-name">${escapeHtml(ext.name)}</div>
-                    <div class="extension-path" title="${escapeHtml(ext.path)}">${escapeHtml(ext.path)}</div>
-                </div>
-                <div class="extension-actions" onclick="event.stopPropagation()">
+                <div class="extension-card-actions" onclick="event.stopPropagation()">
                     <button class="btn btn-ghost btn-sm" onclick="deleteExtension('${ext.id}')">
                         <i data-lucide="trash-2"></i>
                     </button>
@@ -1921,7 +1959,108 @@ function openAddProxyModal() {
     document.getElementById('proxy-username').value = '';
     document.getElementById('proxy-password').value = '';
     document.getElementById('proxy-group').value = '';
+    document.getElementById('proxy-paste-input').value = '';
     openModal('proxy-modal');
+}
+
+/**
+ * Parses proxy input in various formats and auto-fills the fields
+ * Supported formats:
+ * - host:port
+ * - protocol://host:port
+ * - user:pass@host:port or user:pass@host:port:protocol
+ * - protocol://user:pass@host:port
+ */
+function parseProxyInput() {
+    const input = document.getElementById('proxy-paste-input').value.trim();
+    if (!input) return;
+
+    let protocol = 'http';
+    let host = '';
+    let port = '';
+    let username = '';
+    let password = '';
+
+    // Format: protocol://host:port
+    if (input.includes('://')) {
+        const [protoPart, addressPart] = input.split('://');
+        protocol = protoPart.toLowerCase().replace('socks', 'socks5');
+        
+        // Format: protocol://user:pass@host:port
+        if (addressPart.includes('@')) {
+            const [authPart, hostPortPart] = addressPart.split('@');
+            if (authPart.includes(':')) {
+                [username, password] = authPart.split(':');
+            }
+            const lastColon = hostPortPart.lastIndexOf(':');
+            if (lastColon > 0) {
+                host = hostPortPart.substring(0, lastColon);
+                port = hostPortPart.substring(lastColon + 1);
+            }
+        } else {
+            // Format: protocol://host:port
+            const lastColon = addressPart.lastIndexOf(':');
+            if (lastColon > 0) {
+                host = addressPart.substring(0, lastColon);
+                port = addressPart.substring(lastColon + 1);
+            }
+        }
+    }
+    // Format: user:pass@host:port or user:pass@host:port:protocol
+    else if (input.includes('@')) {
+        const [authPart, hostPortProto] = input.split('@');
+        if (authPart.includes(':')) {
+            [username, password] = authPart.split(':');
+        }
+        
+        // Check if protocol is at the end
+        const parts = hostPortProto.split(':');
+        if (parts.length >= 2) {
+            // Check if last part is a protocol
+            if (['http', 'https', 'socks5', 'socks4', 'socks'].includes(parts[parts.length - 1].toLowerCase())) {
+                protocol = parts[parts.length - 1].toLowerCase().replace('socks', 'socks5');
+                // Remove protocol and reconstruct host:port
+                port = parts[parts.length - 2];
+                host = parts.slice(0, -2).join(':');
+            } else {
+                // user:pass@host:port - standard format
+                host = parts[0];
+                port = parts[1];
+            }
+        }
+    }
+    // Format: host:port
+    else {
+        const parts = input.split(':');
+        if (parts.length >= 2) {
+            host = parts[0];
+            port = parts[1];
+            // Check if first part is a protocol without :
+            if (['http', 'https', 'socks5', 'socks4', 'socks'].includes(parts[0].toLowerCase())) {
+                protocol = parts[0].toLowerCase().replace('socks', 'socks5');
+                host = parts[1];
+                port = parts[2] || '';
+            }
+        }
+    }
+
+    // Set the values
+    if (host) document.getElementById('proxy-host').value = host;
+    if (port) document.getElementById('proxy-port').value = port;
+    if (username) document.getElementById('proxy-username').value = username;
+    if (password) document.getElementById('proxy-password').value = password;
+    
+    // Set protocol after validation
+    const validProtocols = ['http', 'https', 'socks5'];
+    if (validProtocols.includes(protocol)) {
+        document.getElementById('proxy-type').value = protocol;
+    }
+
+    // Auto-generate proxy name if empty and we have host/port
+    const nameField = document.getElementById('proxy-name');
+    if (!nameField.value && host && port) {
+        nameField.value = `${host}:${port}`;
+    }
 }
 
 async function checkSelectedProxy(mode) {
@@ -3901,7 +4040,7 @@ function updateJarvisStatus(connected) {
         let providerName = 'AI';
         if (jarvisConfig && jarvisConfig.provider) {
             const p = jarvisConfig.provider;
-            providerName = p === 'droidgravity' ? 'DroidGravity' : (p === 'openai' ? 'OpenAI' : 'OpenRouter');
+            providerName = p === 'openai' ? 'OpenAI' : 'OpenRouter';
         }
         
         if (text) text.textContent = `${t('jarvis.connected')} (${providerName})`;
@@ -4754,18 +4893,14 @@ function toggleJarvisProviderFields() {
     const modelInput = document.getElementById('jarvis-model-name');
     const urlInput = document.getElementById('jarvis-api-url');
     
-    if (provider === 'droidgravity') {
-        urlGroup.style.display = 'block';
-        if (!urlInput.value) urlInput.value = 'http://127.0.0.1:8045';
-        if (!modelInput.value || modelInput.value.includes('gpt')) modelInput.value = 'gemini-3-flash';
-    } else if (provider === 'openai') {
-        urlGroup.style.display = 'block';
+    urlGroup.style.display = 'block';
+    
+    if (provider === 'openai') {
         urlInput.placeholder = 'https://api.openai.com/v1 (Optional)';
-        if (modelInput.value === 'gemini-3-flash') modelInput.value = 'gpt-4o';
+        if (modelInput.value === 'gemini-3-flash' || modelInput.value === '') modelInput.value = 'gpt-4o';
     } else if (provider === 'openrouter') {
-        urlGroup.style.display = 'block';
         urlInput.placeholder = 'https://openrouter.ai/api/v1 (Optional)';
-        if (modelInput.value === 'gemini-3-flash') modelInput.value = 'openai/gpt-4o';
+        if (modelInput.value === 'gemini-3-flash' || modelInput.value === 'gpt-4o' || modelInput.value === '') modelInput.value = 'openai/gpt-4o';
     }
 }
 

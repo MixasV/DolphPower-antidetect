@@ -98,19 +98,19 @@
                         <i data-lucide="lock"></i>
                         <span data-i18n="auth.protected">Protected</span>
                     </div>
-                    <button class="btn btn-primary" onclick="openCreateModal()">
+                    <button id="header-btn-new-profile" class="btn btn-primary" onclick="openCreateModal()">
                         <i data-lucide="plus"></i>
                         <span data-i18n="profiles.create">New Profile</span>
                     </button>
-                    <button class="btn btn-secondary" onclick="openBulkCreateModal()">
+                    <button id="header-btn-many-profiles" class="btn btn-secondary" onclick="openBulkCreateModal()">
                         <i data-lucide="layers"></i>
                         <span data-i18n="profiles.createMany">Many Profiles</span>
                     </button>
-                    <button class="btn btn-secondary" onclick="openImportModal()">
+                    <button id="header-btn-import" class="btn btn-secondary" onclick="openImportModal()">
                         <i data-lucide="download"></i>
                         <span data-i18n="profiles.import">Import</span>
                     </button>
-                    <button class="btn btn-secondary" onclick="openExportModal()">
+                    <button id="header-btn-export" class="btn btn-secondary" onclick="openExportModal()">
                         <i data-lucide="upload"></i>
                         <span data-i18n="common.export">Export</span>
                     </button>
@@ -1512,6 +1512,18 @@
                 </button>
             </div>
             <div class="modal-body">
+                <!-- Auto-parse field -->
+                <div class="form-group">
+                    <label data-i18n="form.pasteProxy">Paste Proxy (any format)</label>
+                    <div class="input-with-action">
+                        <input type="text" id="proxy-paste-input" placeholder="host:port, protocol://host:port, user:pass@host:port" oninput="parseProxyInput()">
+                        <button class="btn btn-secondary btn-sm" onclick="parseProxyInput()">
+                            <i data-lucide="zap"></i> Parse
+                        </button>
+                    </div>
+                    <p class="help-text" style="font-size: 11px; margin-top: 4px;">Supports: host:port, protocol://host:port, user:pass@host:port, user:pass@host:port:protocol</p>
+                </div>
+                
                 <div class="form-group">
                     <label data-i18n="form.proxyName">Proxy Name</label>
                     <input type="text" id="proxy-name" placeholder="My Proxy">
@@ -1984,7 +1996,6 @@
                     <div class="form-group">
                         <label data-i18n="jarvis.provider">AI Provider</label>
                         <select id="jarvis-provider" onchange="toggleJarvisProviderFields()">
-                            <option value="droidgravity" data-i18n="jarvis.provider.droidgravity">DroidGravity (Default)</option>
                             <option value="openai" data-i18n="jarvis.provider.openai">OpenAI (BYOK)</option>
                             <option value="openrouter" data-i18n="jarvis.provider.openrouter">OpenRouter (BYOK)</option>
                         </select>
@@ -2009,9 +2020,8 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label data-i18n="jarvis.modelName">Model Name</label>
-                        <input type="text" id="jarvis-model-name" list="ai-models-list" placeholder="gemini-3-flash">
+                        <input type="text" id="jarvis-model-name" list="ai-models-list" placeholder="gpt-4o">
                         <datalist id="ai-models-list">
-                            <option value="gemini-3-flash">
                             <option value="gpt-4o">
                             <option value="gpt-4o-mini">
                             <option value="claude-3-5-sonnet">

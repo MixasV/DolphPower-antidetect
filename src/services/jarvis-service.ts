@@ -45,7 +45,7 @@ export class JarvisService {
     return `<system-reminder>
 
 User system info (${osInfo})
-Model: ${this.config?.model_name || 'gemini-3-flash'}
+Model: ${this.config?.model_name || 'gpt-4o'}
 Today's date: ${today}
 Current Permission Level: ${permission}
 
@@ -182,49 +182,26 @@ The user is currently interacting with you via an overlay on this page. You can 
       }
       
       const apiKey = this.config?.api_key ? EncryptionService.decrypt(this.config.api_key) : '';
-      const provider = this.config?.provider || 'droidgravity';
+      const provider = this.config?.provider || 'openai';
       
       let messages: any[] = [];
       let apiUrl = this.baseUrl;
 
-      if (provider === 'droidgravity') {
-        // Strict format for DroidGravity
-        messages = [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: systemReminder },
-              { type: 'text', text: systemPrompt },
-              ...history.map(msg => ({ 
-                type: 'text', 
-                text: `${msg.role === 'assistant' ? 'Assistant' : 'User'}: ${msg.content}` 
-              })),
-              { type: 'text', text: query }
-            ]
-          }
-        ];
-        // DroidGravity uses /v1/chat/completions
-        if (!apiUrl || apiUrl === '') apiUrl = 'http://127.0.0.1:8045';
-        if (!apiUrl.endsWith('/v1')) {
-          apiUrl = apiUrl.replace(/\/$/, '') + '/v1';
-        }
-      } else {
-        // Standard format for OpenAI/OpenRouter - BYPASS DroidManager
-        messages = [
-          { role: 'system', content: `${systemPrompt}\n\n${systemReminder}` },
-          ...history.map(msg => ({ role: msg.role, content: msg.content })),
-          { role: 'user', content: query }
-        ];
+      // Standard format for OpenAI/OpenRouter
+      messages = [
+        { role: 'system', content: `${systemPrompt}\n\n${systemReminder}` },
+        ...history.map(msg => ({ role: msg.role, content: msg.content })),
+        { role: 'user', content: query }
+      ];
 
-        if (provider === 'openai' && (!apiUrl || apiUrl === '')) {
-          apiUrl = 'https://api.openai.com/v1';
-        } else if (provider === 'openrouter' && (!apiUrl || apiUrl === '')) {
-          apiUrl = 'https://openrouter.ai/api/v1';
-        }
+      if (provider === 'openai' && (!apiUrl || apiUrl === '')) {
+        apiUrl = 'https://api.openai.com/v1';
+      } else if (provider === 'openrouter' && (!apiUrl || apiUrl === '')) {
+        apiUrl = 'https://openrouter.ai/api/v1';
       }
 
       const response = await axios.post(`${apiUrl}/chat/completions`, {
-        model: this.config?.model_name || (provider === 'droidgravity' ? 'gemini-3-flash' : 'gpt-4o'),
+        model: this.config?.model_name || 'gpt-4o',
         messages: messages,
         temperature: 0.3
       }, {

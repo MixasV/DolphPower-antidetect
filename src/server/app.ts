@@ -771,6 +771,24 @@ export function createApp(db: Database): Express {
                 if (proxy.username && proxy.password) {
                     proxyAuth = { username: proxy.username, password: proxy.password };
                 }
+                
+                // Pre-test proxy connectivity before launching browser
+                console.log(`🔍 Pre-testing proxy ${proxy.name} (${proxy.host}:${proxy.port})...`);
+                try {
+                    const proxyTestResult = await ipChecker.checkProxyIP(proxyInfo);
+                    if (!proxyTestResult.success) {
+                        return res.status(400).json({ 
+                            error: `Proxy connection failed: ${proxyTestResult.error || 'Unknown error'}`,
+                            proxy_error: true
+                        });
+                    }
+                    console.log(`🔍 Proxy test successful, latency: ${proxyTestResult.latency}ms`);
+                } catch (proxyError: any) {
+                    return res.status(400).json({ 
+                        error: `Proxy test failed: ${proxyError.message || 'Unable to connect to proxy'}`,
+                        proxy_error: true
+                    });
+                }
             }
         }
 
@@ -1810,10 +1828,10 @@ export function createApp(db: Database): Express {
                     tg_requires_2fa = excluded.tg_requires_2fa,
                     updated_at = excluded.updated_at
             `, [
-                provider || 'droidgravity',
-                api_url || (provider === 'droidgravity' ? 'http://127.0.0.1:8045' : ''),
+                provider || 'openai',
+                api_url || (provider === 'openai' ? 'https://api.openai.com/v1' : 'https://openrouter.ai/api/v1'),
                 encryptedKey,
-                model_name || (provider === 'droidgravity' ? 'gemini-3-flash' : 'gpt-4o'),
+                model_name || 'gpt-4o',
                 master_profile_id,
                 permission_level || 'standard',
                 system_prompt,

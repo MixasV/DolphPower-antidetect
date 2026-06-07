@@ -296,10 +296,10 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           db.run(`
             CREATE TABLE IF NOT EXISTS jarvis_config (
               id INTEGER PRIMARY KEY CHECK (id = 1), -- Single row config
-              provider TEXT DEFAULT 'droidgravity', -- 'droidgravity', 'openai', 'openrouter'
-              api_url TEXT DEFAULT 'http://127.0.0.1:8045',
+              provider TEXT DEFAULT 'openai', -- 'openai', 'openrouter'
+              api_url TEXT,
               api_key TEXT, -- Encrypted
-              model_name TEXT DEFAULT 'gemini-3-flash',
+              model_name TEXT DEFAULT 'gpt-4o',
               master_profile_id TEXT, -- Dedicated profile for testing scripts
               permission_level TEXT DEFAULT 'standard', -- 'readonly', 'standard', 'admin'
               system_prompt TEXT,
@@ -436,7 +436,7 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
 // ==================== INTERFACES ====================
 
 export interface JarvisConfig {
-  provider: 'droidgravity' | 'openai' | 'openrouter';
+  provider: 'openai' | 'openrouter';
   api_url: string;
   api_key: string;
   model_name: string;
