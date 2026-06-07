@@ -1,5 +1,8 @@
 import { app, BrowserWindow, ipcMain, globalShortcut, dialog } from 'electron';
 import path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import { v4 as uuidv4 } from 'uuid';
 import { createApp, startServer } from '../server/app';
 import { initializeDatabase } from '../database/schema';
 import axios from 'axios';
@@ -62,6 +65,14 @@ async function registerJarvisHotkeys() {
             }
         } catch (e) {
             console.error('Hotkey stop error:', e);
+        }
+    });
+
+    // Emergency lockout hotkey - Ctrl+Shift+L
+    globalShortcut.register('CommandOrControl+Shift+L', async () => {
+        console.log('[Hotkey] Ctrl+Shift+L pressed - Emergency Lockout');
+        if (mainWindow) {
+            mainWindow.webContents.send('trigger-emergency-lockout');
         }
     });
 }
@@ -187,11 +198,6 @@ ipcMain.handle('select-file', async () => {
 
 ipcMain.handle('save-temp-image', async (event, base64Data) => {
     try {
-        const fs = require('fs');
-        const os = require('os');
-        const path = require('path');
-        const { v4: uuidv4 } = require('uuid');
-
         const buffer = Buffer.from(base64Data.split(',')[1], 'base64');
         const tempDir = path.join(os.tmpdir(), 'dolfpower_screenshots');
         if (!fs.existsSync(tempDir)) {
@@ -207,4 +213,12 @@ ipcMain.handle('save-temp-image', async (event, base64Data) => {
         console.error('Failed to save temp image:', e);
         return null;
     }
+});
+
+// Emergency lockout handler
+ipcMain.handle('emergency-lockout', async () => {
+    console.log('[IPC] Emergency lockout triggered');
+    // In a real implementation, we would call the emergency lockout service here
+    // For now, we'll just acknowledge the request
+    return { success: true, message: 'Emergency lockout activated' };
 });

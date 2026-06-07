@@ -183,6 +183,30 @@ export class LocalMigrationService {
                         userAgent = fp.ua || '';
                     } catch (e) {}
 
+                    // Try to extract cookies from SQLite if available
+                    let cookies: any[] = [];
+                    const cookiesPath = path.join(fullPath, 'Default', 'Cookies');
+                    const rootCookiesPath = path.join(fullPath, 'Cookies');
+                    const targetCookies = existsSync(cookiesPath) ? cookiesPath : (existsSync(rootCookiesPath) ? rootCookiesPath : null);
+
+                    if (targetCookies) {
+                        try {
+                            cookies = await new Promise((resolve) => {
+                                const tempDb = new (require('sqlite3').Database)(targetCookies);
+                                tempDb.all('SELECT name, value, host_key as domain, path, expires_utc as expirationDate, is_secure as secure, is_httponly as httpOnly FROM cookies', (err: any, rows: any) => {
+                                    tempDb.close();
+                                    if (err) resolve([]);
+                                    else {
+                                        resolve(rows.map((r: any) => ({
+                                            ...r,
+                                            expirationDate: Math.floor(r.expirationDate / 1000000) - 11644473600 // Convert Chrome time to Unix
+                                        })));
+                                    }
+                                });
+                            });
+                        } catch (e) {}
+                    }
+
                     profiles.push({
                         id: dirName,
                         name: meta.name || `AdsPower_${dirName}`,
@@ -190,7 +214,8 @@ export class LocalMigrationService {
                         path: fullPath,
                         notes: meta.remark,
                         proxy,
-                        userAgent
+                        userAgent,
+                        cookies
                     });
                 }
             }
@@ -410,24 +435,9 @@ export class LocalMigrationService {
 
         const targetDir = newProfile.user_data_dir;
 
+        // Generic data transfer based on browser type
         if (source.browser === 'dolphin') {
             await this.transferDolphinData(source.id, source.path, targetDir);
-            
-            // Re-import cookies from JSON if available (Dolphin specific fix)
-            if (source.cookies && source.cookies.length > 0) {
-                console.log(`[Migration] Importing ${source.cookies.length} cookies for profile ${newProfile.id}`);
-                const cookiesToImport = source.cookies.map(c => ({
-                    name: c.name,
-                    value: c.value,
-                    domain: c.domain,
-                    path: c.path || '/',
-                    expires: c.expirationDate ? c.expirationDate * 1000 : 0,
-                    secure: !!c.secure,
-                    httpOnly: !!c.httpOnly,
-                    sameSite: c.sameSite || 'Lax'
-                }));
-                await this.cookieManager.importCookies(newProfile.id, cookiesToImport as any);
-            }
         } else if (source.browser === 'adspower') {
             await this.transferAdsPowerData(source.path, targetDir);
         } else {
@@ -435,6 +445,59 @@ export class LocalMigrationService {
             if (existsSync(source.path)) {
                 await this.copyDir(source.path, targetDir);
             }
+        }
+
+        // FOLDER STRUCTURE CORRECTION (Generic for all browsers)
+        // Chromium profiles usually expect data in a 'Default' subfolder.
+        // If the source app stored contents directly, we move them.
+        try {
+            const defaultDir = path.join(targetDir, 'Default');
+            const rootCookies = path.join(targetDir, 'Cookies');
+            const rootPreferences = path.join(targetDir, 'Preferences');
+            const rootNetwork = path.join(targetDir, 'Network');
+
+            if ((existsSync(rootCookies) || existsSync(rootPreferences) || existsSync(rootNetwork)) && !existsSync(defaultDir)) {
+                console.log(`[Migration] Detected flat profile structure for ${source.name}, correcting...`);
+                await fs.mkdir(defaultDir, { recursive: true });
+                const items = await fs.readdir(targetDir);
+                for (const item of items) {
+                    if (item === 'Default') continue;
+                    const oldPath = path.join(targetDir, item);
+                    const newPath = path.join(defaultDir, item);
+                    await fs.rename(oldPath, newPath).catch(err => {
+                        console.warn(`Failed to move ${item}:`, err.message);
+                    });
+                }
+            }
+            
+            // CLEANUP machine-specific Chromium files
+            const machineFiles = ['Local State', 'Last Version', 'Last Node'];
+            for (const f of machineFiles) {
+                const fPath = path.join(targetDir, f);
+                if (existsSync(fPath)) await fs.unlink(fPath).catch(() => {});
+                const fPathInDefault = path.join(defaultDir, f);
+                if (existsSync(fPathInDefault)) await fs.unlink(fPathInDefault).catch(() => {});
+            }
+        } catch (e: any) {
+            console.warn(`[Migration] Folder correction failed:`, e.message);
+        }
+
+        // COOKIE RESTORATION (Generic if cookies were extracted)
+        if (source.cookies && source.cookies.length > 0) {
+            console.log(`[Migration] Importing ${source.cookies.length} cookies for profile ${newProfile.id}`);
+            const cookiesToImport = source.cookies.map(c => ({
+                name: c.name,
+                value: c.value,
+                domain: c.domain,
+                path: c.path || '/',
+                expires: c.expirationDate ? c.expirationDate * 1000 : (c.expires ? c.expires * 1000 : 0),
+                secure: !!c.secure,
+                httpOnly: !!c.httpOnly,
+                sameSite: c.sameSite || 'Lax'
+            }));
+            await this.cookieManager.importCookies(newProfile.id, cookiesToImport as any).catch(err => {
+                console.warn(`[Migration] Cookie import failed:`, err.message);
+            });
         }
         
         return newProfile.id;

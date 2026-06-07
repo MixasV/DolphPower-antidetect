@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import os from 'os';
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import { Database } from 'sqlite3';
 import axios from 'axios';
 import { createWriteStream } from 'fs';
@@ -58,7 +59,7 @@ export class ExtensionManager {
         `);
     }
 
-    async addExtension(name: string, sourcePath: string): Promise<Extension> {
+    async addExtension(name: string, sourcePath: string, groupId: string | null = null): Promise<Extension> {
         const id = uuidv4();
         const created_at = Date.now();
 
@@ -85,8 +86,8 @@ export class ExtensionManager {
 
         return new Promise((resolve, reject) => {
             this.db.run(
-                `INSERT INTO extensions (id, name, path, enabled, created_at, version, description) VALUES (?, ?, ?, 1, ?, ?, ?)`,
-                [id, manifest.name || name, extensionDir, created_at, manifest.version, manifest.description],
+                `INSERT INTO extensions (id, name, path, enabled, created_at, version, description, group_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
+                [id, manifest.name || name, extensionDir, created_at, manifest.version, manifest.description, groupId],
                 (err) => {
                     if (err) reject(err);
                     else resolve({ 
@@ -103,7 +104,7 @@ export class ExtensionManager {
         });
     }
 
-    async installFromChromeStore(extensionId: string): Promise<Extension> {
+    async installFromChromeStore(extensionId: string, groupId: string | null = null): Promise<Extension> {
         const id = uuidv4();
         const created_at = Date.now();
         const extensionDir = path.join(EXTENSIONS_DIR, id);
@@ -140,8 +141,8 @@ export class ExtensionManager {
 
             return new Promise((resolve, reject) => {
                 this.db.run(
-                    `INSERT INTO extensions (id, name, path, enabled, created_at, version, description) VALUES (?, ?, ?, 1, ?, ?, ?)`,
-                    [id, manifest.name || `Chrome Extension ${extensionId}`, extensionDir, created_at, manifest.version, manifest.description],
+                    `INSERT INTO extensions (id, name, path, enabled, created_at, version, description, group_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
+                    [id, manifest.name || `Chrome Extension ${extensionId}`, extensionDir, created_at, manifest.version, manifest.description, groupId],
                     (err) => {
                         if (err) reject(err);
                         else resolve({ 
@@ -224,10 +225,59 @@ export class ExtensionManager {
         try {
             const manifestPath = path.join(dir, 'manifest.json');
             const content = await fs.readFile(manifestPath, 'utf8');
-            return JSON.parse(content);
+            const manifest = JSON.parse(content);
+            
+            // Handle localization
+            if (manifest.name && manifest.name.startsWith('__MSG_')) {
+                const localizedName = await this.localizeString(dir, manifest.name);
+                if (localizedName) manifest.name = localizedName;
+            }
+            
+            if (manifest.description && manifest.description.startsWith('__MSG_')) {
+                const localizedDesc = await this.localizeString(dir, manifest.description);
+                if (localizedDesc) manifest.description = localizedDesc;
+            }
+
+            return manifest;
         } catch {
             return {};
         }
+    }
+
+    private async localizeString(extensionDir: string, key: string): Promise<string | null> {
+        const messageKey = key.replace(/^__MSG_/, '').replace(/__$/, '');
+        const localesDir = path.join(extensionDir, '_locales');
+        
+        try {
+            if (!existsSync(localesDir)) return null;
+
+            // Standard Chrome localization folder names are often lowercase or use underscores
+            const availableLocales = await fs.readdir(localesDir);
+            const preferredLocales = ['en_US', 'en-US', 'en', 'en_GB', 'ru_RU', 'ru'];
+            
+            // Case-insensitive search for locale folder
+            let targetLocale = null;
+            for (const pref of preferredLocales) {
+                targetLocale = availableLocales.find(l => l.toLowerCase() === pref.toLowerCase().replace('-', '_'));
+                if (targetLocale) break;
+            }
+            
+            if (!targetLocale) targetLocale = availableLocales[0];
+
+            if (targetLocale) {
+                const messagesPath = path.join(localesDir, targetLocale, 'messages.json');
+                if (existsSync(messagesPath)) {
+                    const content = await fs.readFile(messagesPath, 'utf8');
+                    const messages = JSON.parse(content);
+                    // Handle case-insensitive key search in the JSON
+                    const actualKey = Object.keys(messages).find(k => k.toLowerCase() === messageKey.toLowerCase());
+                    return actualKey ? messages[actualKey].message : null;
+                }
+            }
+        } catch (e) {
+            console.warn(`[ExtensionManager] Localization failed for ${key}:`, e);
+        }
+        return null;
     }
 
     private async copyDirectory(src: string, dest: string): Promise<void> {

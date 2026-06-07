@@ -143,47 +143,87 @@ export class IPChecker {
 
                 for (const url of checkUrls) {
                     try {
-                        const args = ['-s', '--connect-timeout', '10', '--max-time', '15'];
+                        const args = ['-s', '-i', '--connect-timeout', '15', '--max-time', '20', '--insecure', '-L'];
                         
                         // Proxy configuration
-                        // Use socks5h for SOCKS5 to ensure DNS is resolved by proxy
-                        const protocolPrefix = protocol.startsWith('socks') ? 'socks5h' : protocol;
-                        const proxyUrl = `${protocolPrefix}://${proxyConfig.host}:${proxyConfig.port}`;
-                        args.push('--proxy', proxyUrl);
+                        let protocolPrefix = protocol;
+                        if (protocol === 'socks5' || protocol === 'socks4') {
+                            protocolPrefix = protocol + 'h'; 
+                        }
+                        
+                        const proxyUrl = `${proxyConfig.host}:${proxyConfig.port}`;
+                        args.push('--proxy', `${protocolPrefix}://${proxyUrl}`);
                         
                         if (proxyConfig.username) {
-                            // Use --proxy-user for authentication
+                            // Use basic auth strictly if provided to avoid 407 on initial probe
+                            // Adding --proxy-basic to force basic authentication
                             args.push('--proxy-user', `${proxyConfig.username}:${proxyConfig.password || ''}`);
+                            args.push('--proxy-basic');
                         }
                         
                         args.push(url);
+                        console.log(`[IPChecker] Running: curl ${args.join(' ')}`);
 
-                        const stdout = await this.runCurl(args);
-                        if (!stdout) continue;
-                        
-                        const data = JSON.parse(stdout);
-                        if (data.status === 'success' || data.ip || data.query) {
-                            const latency = Date.now() - startTime;
-                            // Normalization
-                            const info: IPInfo = {
-                                ip: data.query || data.ip || '',
-                                country: data.country || data.country_name || '',
-                                countryCode: data.countryCode || data.country_code || '',
-                                region: data.region || data.region_name || '',
-                                city: data.city || '',
-                                zip: data.zip || data.postal || '',
-                                lat: data.lat || data.latitude || 0,
-                                lon: data.lon || data.longitude || 0,
-                                timezone: data.timezone || '',
-                                isp: data.isp || data.org || '',
-                                org: data.org || '',
-                                as: data.as || data.asn || '',
-                                proxy: data.proxy || false,
-                                hosting: data.hosting || false,
-                            };
-                            return { success: true, latency, info };
+                        const output = await this.runCurl(args);
+                        if (!output) {
+                            console.warn(`[IPChecker] No output from curl for ${url}`);
+                            continue;
                         }
-                    } catch (innerErr) {
+
+                        // Robust status code checking for multiple header blocks (due to -L redirects)
+                        const headerBlocks = output.split('\r\n\r\n');
+                        const lastHeaderBlock = headerBlocks.length > 1 ? headerBlocks[headerBlocks.length - 2] : '';
+                        const body = headerBlocks[headerBlocks.length - 1] || '';
+                        
+                        const statusLine = lastHeaderBlock.split('\n')[0];
+                        const statusCode = statusLine ? parseInt(statusLine.split(' ')[1]) : 0;
+
+                        console.log(`[IPChecker] Final Status Code: ${statusCode} for ${url}`);
+
+                        if (statusCode === 407) {
+                            return { success: false, latency: Date.now() - startTime, error: 'Proxy Authentication Failed (407). Check credentials.' };
+                        }
+                        if (statusCode >= 500) {
+                            return { success: false, latency: Date.now() - startTime, error: `Proxy Gateway Error (${statusCode}).` };
+                        }
+                        if (statusCode === 403) {
+                            return { success: false, latency: Date.now() - startTime, error: 'Proxy Access Forbidden (403).' };
+                        }
+                        if (statusCode === 0 || (statusCode >= 400 && statusCode < 500)) {
+                             // If it's a 4xx error (other than 407/403), we might still want to try next provider
+                             continue;
+                        }
+                        
+                        try {
+                            const data = JSON.parse(body);
+                            if (data.status === 'success' || data.ip || data.query) {
+                                const latency = Date.now() - startTime;
+                                // Normalization
+                                const info: IPInfo = {
+                                    ip: data.query || data.ip || '',
+                                    country: data.country || data.country_name || '',
+                                    countryCode: data.countryCode || data.country_code || '',
+                                    region: data.region || data.region_name || '',
+                                    city: data.city || '',
+                                    zip: data.zip || data.postal || '',
+                                    lat: data.lat || data.latitude || 0,
+                                    lon: data.lon || data.longitude || 0,
+                                    timezone: data.timezone || '',
+                                    isp: data.isp || data.org || '',
+                                    org: data.org || '',
+                                    as: data.as || data.asn || '',
+                                    proxy: data.proxy || false,
+                                    hosting: data.hosting || false,
+                                };
+                                return { success: true, latency, info };
+                            }
+                        } catch (parseErr) {
+                            // If JSON parsing fails, but we have a response, maybe it's not JSON
+                            continue;
+                        }
+                    } catch (innerErr: any) {
+                        const errorMsg = innerErr.message || String(innerErr);
+                        if (errorMsg.includes('407')) return { success: false, latency: Date.now() - startTime, error: 'Proxy Auth Failed' };
                         continue;
                     }
                 }

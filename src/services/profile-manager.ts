@@ -110,7 +110,30 @@ export class ProfileManager {
                     } else {
                         // Create fingerprint configuration
                         this.createFingerprintConfig(id, finalFingerprint)
-                            .then(() => resolve(profile))
+                            .then(async () => {
+                                // AUTO-ASSIGN EXTENSIONS AND BOOKMARKS BASED ON GROUP (only if not explicitly provided)
+                                try {
+                                    // 1. Extensions
+                                    const extensions: any[] = await new Promise((res) => {
+                                        this.db.all('SELECT id FROM extensions WHERE group_id IS NULL OR group_id = ?', [options.groupId], (err, rows) => res(rows || []));
+                                    });
+                                    for (const ext of extensions) {
+                                        await new Promise((res) => this.db.run('INSERT OR IGNORE INTO profile_extensions (profile_id, extension_id) VALUES (?, ?)', [id, ext.id], res));
+                                    }
+
+                                    // 2. Bookmarks
+                                    const bookmarks: any[] = await new Promise((res) => {
+                                        this.db.all('SELECT id FROM bookmarks WHERE group_id IS NULL OR group_id = ?', [options.groupId], (err, rows) => res(rows || []));
+                                    });
+                                    for (const bm of bookmarks) {
+                                        await new Promise((res) => this.db.run('INSERT OR IGNORE INTO profile_bookmarks (profile_id, bookmark_id) VALUES (?, ?)', [id, bm.id], res));
+                                    }
+                                } catch (e) {
+                                    console.error('[ProfileManager] Auto-assignment failed:', e);
+                                }
+                                
+                                resolve(profile);
+                            })
                             .catch(reject);
                     }
                 }

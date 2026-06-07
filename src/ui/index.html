@@ -90,6 +90,10 @@
                     <span class="profile-count">(<span id="total-count">0</span>)</span>
                 </div>
                 <div class="top-bar-right">
+                    <button class="btn btn-danger btn-stop-all" id="btn-emergency-stop" onclick="emergencyStopAll()" title="Stop all tasks and browsers" style="display: none;">
+                        <i data-lucide="octagon-pause"></i>
+                        <span data-i18n="common.stopAll">Stop All</span>
+                    </button>
                     <div id="security-status-indicator" class="security-status" title="Data is encrypted with your Master Password">
                         <i data-lucide="lock"></i>
                         <span data-i18n="auth.protected">Protected</span>
@@ -1769,6 +1773,12 @@
                     <label data-i18n="form.extensionPath">Path to Extension Folder or .zip/.crx</label>
                     <input type="text" id="extension-path-input" placeholder="C:\Extensions\ublock">
                 </div>
+                <div class="form-group">
+                    <label data-i18n="form.group">Group</label>
+                    <select id="extension-group-input">
+                        <option value="">All Groups</option>
+                    </select>
+                </div>
                 <div id="extension-modal-results" class="modal-results-area" style="display: none;"></div>
             </div>
             <div class="modal-footer">
@@ -1796,6 +1806,12 @@
                 <div class="form-group">
                     <label data-i18n="form.url">URL</label>
                     <input type="text" id="bookmark-url-input" placeholder="https://google.com">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="form.group">Group</label>
+                    <select id="bookmark-group-input">
+                        <option value="">All Groups</option>
+                    </select>
                 </div>
                 <div id="bookmark-modal-results" class="modal-results-area" style="display: none;"></div>
             </div>
@@ -1902,6 +1918,12 @@
                 <div class="form-group">
                     <label data-i18n="form.chromeStoreUrl">Chrome Web Store Link or Extension ID</label>
                     <input type="text" id="chrome-store-url" placeholder="https://chromewebstore.google.com/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="form.group">Group</label>
+                    <select id="chrome-extension-group-input">
+                        <option value="">All Groups</option>
+                    </select>
                 </div>
                 <div id="chrome-store-warning" class="modal-results-area" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning);">
                     <div style="color: var(--warning); font-weight: bold; margin-bottom: 5px;">⚠️ <span data-i18n="msg.chromeStoreWarningTitle">Security Warning</span></div>

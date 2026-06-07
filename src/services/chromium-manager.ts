@@ -556,7 +556,7 @@ export class ChromiumManager {
 
             for (const chromePath of possiblePaths) {
                 try {
-                    if (require('fs').existsSync(chromePath)) {
+                    if (fs.existsSync(chromePath)) {
                         return chromePath;
                     }
                 } catch (e) {
@@ -577,7 +577,7 @@ export class ChromiumManager {
 
             for (const chromePath of possiblePaths) {
                 try {
-                    if (require('fs').existsSync(chromePath)) {
+                    if (fs.existsSync(chromePath)) {
                         return chromePath;
                     }
                 } catch (e) {
@@ -654,8 +654,21 @@ export class ChromiumManager {
             await Runtime.enable();
             await Target.setDiscoverTargets({ discover: true });
 
-            // Set up proxy authentication to avoid browser popups
             const info = this.runningProcesses.get(profileId);
+
+            // IMMEDIATELY navigate to the IP check page to avoid blank screen
+            const ipCheckUrl = 'file:///' + path.join(__dirname, '..', 'ui', 'ip-check.html').replace(/\\/g, '/');
+            const ipCheckUrlWithId = `${ipCheckUrl}?profileId=${profileId}`;
+            
+            // Store start URLs for later (after proxy verification)
+            if (info && startUrls && startUrls.length > 0) {
+                info.startUrls = startUrls.filter(u => u && u.trim());
+            }
+
+            console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
+            await Page.navigate({ url: ipCheckUrlWithId });
+
+            // Set up proxy authentication to avoid browser popups
             if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
                 const { username, password } = info.proxyOptions.proxyAuth;
                 if (username) {
@@ -677,6 +690,8 @@ export class ChromiumManager {
                 }
             }
 
+            // ... (rest of the setup continues while page is loading)
+            
             // Also set basic auth for the browser process level if possible
             if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
                 const { username, password } = info.proxyOptions.proxyAuth;
@@ -938,19 +953,6 @@ export class ChromiumManager {
                 mobile: false,
                 screenOrientation: { type: 'landscapePrimary', angle: 0 }
             });
-
-            // Navigate to the target page AFTER everything is applied
-            const ipCheckUrl = 'file:///' + path.join(__dirname, '..', 'ui', 'ip-check.html').replace(/\\/g, '/');
-            const ipCheckUrlWithId = `${ipCheckUrl}?profileId=${profileId}`;
-            
-            // Store start URLs for later (after proxy verification)
-            if (info && startUrls && startUrls.length > 0) {
-                info.startUrls = startUrls.filter(u => u && u.trim());
-            }
-
-            // We ALWAYS open IP check in the primary tab first
-            console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
-            await Page.navigate({ url: ipCheckUrlWithId });
 
             // Ensure the IP check tab is focused
             const targets = await Target.getTargets();

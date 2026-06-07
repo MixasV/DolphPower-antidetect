@@ -18,6 +18,9 @@ export interface JarvisTask {
     cron_expression: string | null;
     last_run_at: number | null;
     created_at: number;
+    silent?: boolean;
+    allowed_paths?: string[]; // New field for whitelisted file paths
+    parent_session_id?: string; // New field to link task to a chat session
 }
 
 interface ActiveTask {
@@ -28,6 +31,9 @@ interface ActiveTask {
     completedCount: number;
     failedCount: number;
     lastErrors: string[];
+    silent: boolean;
+    debug: boolean;
+    allowedPaths: string[];
 }
 
 export class JarvisTaskManager {
@@ -57,15 +63,29 @@ export class JarvisTaskManager {
         });
     }
 
-    async createTask(name: string, scriptId: string, profileIds: string[], options: { scheduledAt?: number | null, repeatInterval?: number, cronExpression?: string | null } = {}): Promise<string> {
+    async createTask(name: string, scriptId: string, profileIds: string[], options: { scheduledAt?: number | null, repeatInterval?: number, cronExpression?: string | null, silent?: boolean, allowedPaths?: string[], sessionId?: string } = {}): Promise<string> {
         const id = uuidv4();
         const now = Date.now();
         const profileIdsJson = JSON.stringify(profileIds);
+        const allowedPathsJson = options.allowedPaths ? JSON.stringify(options.allowedPaths) : null;
 
         await new Promise<void>((resolve, reject) => {
             this.db.run(
-                'INSERT INTO jarvis_tasks (id, name, script_id, profile_ids, scheduled_at, repeat_interval, cron_expression, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [id, name, scriptId, profileIdsJson, options.scheduledAt || null, options.repeatInterval || 0, options.cronExpression || null, 'pending', now],
+                'INSERT INTO jarvis_tasks (id, name, script_id, profile_ids, scheduled_at, repeat_interval, cron_expression, status, created_at, silent, allowed_paths, parent_session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                    id, 
+                    name, 
+                    scriptId, 
+                    profileIdsJson, 
+                    options.scheduledAt || null, 
+                    options.repeatInterval || 0, 
+                    options.cronExpression || null, 
+                    'pending', 
+                    now, 
+                    options.silent ? 1 : 0,
+                    allowedPathsJson,
+                    options.sessionId || null
+                ],
                 (err) => err ? reject(err) : resolve()
             );
         });
@@ -93,7 +113,23 @@ export class JarvisTaskManager {
             const dueTasks = await this.getDueTasks();
             for (const task of dueTasks) {
                 if (!this.activeTasks.has(task.id)) {
-                    const scenario = await this.rpaEngine.getScenario(task.script_id);
+                    let scenario: any = null;
+                    
+                    // Support for inline JSON scenarios (Jarvis sometimes sends actions directly)
+                    if (task.script_id.trim().startsWith('[') && task.script_id.trim().endsWith(']')) {
+                        try {
+                            scenario = {
+                                id: 'inline-' + task.id,
+                                name: task.name,
+                                actions: JSON.parse(task.script_id)
+                            };
+                        } catch (e) {
+                            console.error('[JarvisTaskManager] Failed to parse inline scenario:', e);
+                        }
+                    } else {
+                        scenario = await this.rpaEngine.getScenario(task.script_id);
+                    }
+
                     if (!scenario) {
                         await this.updateTaskStatus(task.id, 'failed');
                         continue;
@@ -106,16 +142,38 @@ export class JarvisTaskManager {
                         runningCount: 0,
                         completedCount: 0,
                         failedCount: 0,
-                        lastErrors: []
+                        lastErrors: [],
+                        silent: !!task.silent,
+                        debug: task.name.includes('ТЕСТ:') || task.name.toLowerCase().includes('debug'),
+                        allowedPaths: task.allowed_paths || []
                     });
 
                     await this.updateTaskStatus(task.id, 'running');
-                    await this.telegramService.notifyTaskStarted(task.name, task.profile_ids.length);
-                }
-            }
+                    if (task.parent_session_id) {
+                        await this.appendStatusToSession(task.parent_session_id, `🚀 Starting task: ${task.name}`);
+                    }
+                    
+                    // Only notify TG if NOT silent
+                    if (!task.silent) {
+                        await this.telegramService.notifyTaskStarted(task.name, task.profile_ids.length, !!task.silent);
+                    }
+        }
+    }
 
-            // 2. Resource distribution and execution
-            await this.executeStep();
+    // 1.5 Prevent spam loop: check if task failed too many times in a short interval
+    const taskIds = Array.from(this.activeTasks.keys());
+    for (const taskId of taskIds) {
+        const active = this.activeTasks.get(taskId)!;
+        // If task failed on many profiles quickly, maybe stop it?
+        if (active.failedCount > 3 && active.completedCount === 0 && active.runningCount === 0 && active.remainingProfileIds.length > 0) {
+             console.warn(`[JarvisTaskManager] Task ${taskId} is failing consistently. Stopping to prevent spam.`);
+             await this.stopTask(taskId);
+             await this.telegramService.sendMessage(`⚠️ <b>Task Aborted</b>\n\nTask "${active.task.name}" was aborted after multiple consecutive failures to prevent spam.`);
+        }
+    }
+
+    // 2. Resource distribution and execution
+    await this.executeStep();
 
         } catch (e) {
             console.error('[JarvisTaskManager] Scheduler error:', e);
@@ -171,43 +229,116 @@ export class JarvisTaskManager {
         const puppeteer = require('puppeteer-core');
         const task = activeTask.task;
         const profileIndex = task.profile_ids.indexOf(profileId);
+        
+        // Use visible window if it's a single profile task (likely a test run or manual trigger)
+        const isSingleProfile = task.profile_ids.length === 1;
 
         try {
+            console.log(`[JarvisTaskManager] Executing task "${task.name}" on profile ${profileId} (Index: ${profileIndex})`);
+            await this.logExecution(task.id, profileId, 'running', `Starting execution (Headless: ${!isSingleProfile})`);
+
             let devToolsPort = this.chromiumManager.getDevToolsPort(profileId);
             let autoClosed = false;
 
             const profileData = await this.profileManager.getProfileWithFingerprint(profileId);
             if (profileData) {
                 if (!devToolsPort) {
-                    const launchInfo = await this.chromiumManager.launchProfile(profileId, profileData.profile.user_data_dir, { headless: true });
+                    const launchOptions: any = {
+                        headless: !isSingleProfile,
+                        restoreTabs: false
+                    };
+
+                    // Handle Proxy
+                    if (profileData.profile.proxy_id) {
+                        const { ProxyManager } = require('./proxy-manager');
+                        const proxyManager = new ProxyManager(this.db);
+                        const proxy = await proxyManager.getProxy(profileData.profile.proxy_id);
+                        if (proxy) {
+                            launchOptions.proxy = `${proxy.host}:${proxy.port}`;
+                            if (proxy.username) {
+                                launchOptions.proxyAuth = {
+                                    username: proxy.username,
+                                    password: proxy.password
+                                };
+                            }
+                        }
+                    }
+
+                    const launchInfo = await this.chromiumManager.launchProfile(profileId, profileData.profile.user_data_dir, launchOptions);
                     devToolsPort = launchInfo.devToolsPort;
                     autoClosed = true;
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+
+                    // Apply Fingerprint via CDP
+                    if (devToolsPort) {
+                        await this.chromiumManager.applyFingerprintViaCDP(profileId, devToolsPort, profileData.fingerprint);
+                        // Unlock tunnel (which was started blocked for safety)
+                        await this.chromiumManager.unlockProfile(profileId);
+                    }
+                    
+                    // Wait for browser to initialize
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                 }
             }
 
             if (devToolsPort) {
                 const wsEndpoint = await this.chromiumManager.getDevToolsEndpoint(devToolsPort);
-                const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint, defaultViewport: null });
+                const browser = await puppeteer.connect({ 
+                    browserWSEndpoint: wsEndpoint, 
+                    defaultViewport: null 
+                });
+                
                 const pages = await browser.pages();
                 const page = pages.length > 0 ? pages[0] : await browser.newPage();
+                
+                // Bring to front if visible
+                if (!isSingleProfile === false) {
+                    try { await page.bringToFront(); } catch(e) {}
+                }
 
-                await this.rpaEngine.executeScenario(page, activeTask.scenario, { INDEX: profileIndex.toString() }, profileId);
+                const result = await this.rpaEngine.executeScenario(page, activeTask.scenario, { 
+                    INDEX: profileIndex.toString(),
+                    _ALLOWED_PATHS: JSON.stringify(activeTask.allowedPaths)
+                }, profileId, activeTask.debug, async (progress) => {
+                    // Real-time status updates to the chat session if linked
+                    if (task.parent_session_id) {
+                        const statusMsg = `[Task: ${task.name}] Step ${progress.currentStep}/${progress.totalSteps}: ${progress.action.type}${progress.action.selector ? ` on ${progress.action.selector}` : ''} - ${progress.status}${progress.details ? ` (${progress.details.substring(0, 50)}...)` : ''}`;
+                        await this.appendStatusToSession(task.parent_session_id, statusMsg);
+                    }
+                });
+                
+                if (result.success) {
+                    await this.logExecution(task.id, profileId, 'success', `RPA execution finished successfully.`);
+                    activeTask.completedCount++;
+                } else {
+                    const errorSummary = result.errors.map(e => {
+                        const act = e.action;
+                        const target = act.selector || act.url || act.key || act.variableName || '';
+                        return `[Action: ${act.type}${target ? ` on ${target}` : ''}] failed: ${e.error}`;
+                    }).join('; ');
+                    
+                    if (activeTask.debug) {
+                        await this.logExecution(task.id, profileId, 'failed', `RPA Failed. Error summary: ${errorSummary}`);
+                    }
+                    throw new Error(errorSummary);
+                }
 
                 await browser.disconnect();
-                if (autoClosed) await this.chromiumManager.terminateProfile(profileId);
-
-                await this.logExecution(task.id, profileId, 'success', 'Completed successfully');
-                activeTask.completedCount++;
+                
+                // Keep window open for a bit if it was visible so user can see result
+                if (autoClosed) {
+                    if (!isSingleProfile === false) await new Promise(r => setTimeout(r, 5000));
+                    await this.chromiumManager.terminateProfile(profileId);
+                }
             } else {
-                throw new Error('Could not launch profile');
+                throw new Error('Could not launch or connect to profile');
             }
         } catch (err: any) {
             console.error(`[JarvisTaskManager] Profile ${profileId} failed:`, err.message);
             await this.logExecution(task.id, profileId, 'failed', err.message);
             activeTask.failedCount++;
             activeTask.lastErrors.push(`${profileId}: ${err.message}`);
-            await this.telegramService.notifyProfileError(task.name, profileId, err.message);
+            // Silenced to avoid spam, summary will be sent at the end
+            // await this.telegramService.notifyProfileError(task.name, profileId, err.message);
         }
     }
 
@@ -217,10 +348,22 @@ export class JarvisTaskManager {
             const finalStatus = activeTask.failedCount === task.profile_ids.length ? 'failed' : 'completed';
             
             await this.updateTaskStatus(task.id, finalStatus);
-            await this.telegramService.notifyTaskCompleted(task.name, activeTask.completedCount, activeTask.failedCount, activeTask.lastErrors);
             
-            // Handle repetition
-            if (task.repeat_interval > 0) {
+            if (task.parent_session_id) {
+                const completionMsg = finalStatus === 'completed' || activeTask.failedCount === 0 
+                    ? `✅ Task "${task.name}" finished successfully.` 
+                    : `⚠️ Task "${task.name}" finished with ${activeTask.failedCount} errors.`;
+                await this.appendStatusToSession(task.parent_session_id, completionMsg);
+            }
+
+            // Only notify TG if NOT silent
+            if (!task.silent) {
+                await this.telegramService.notifyTaskCompleted(task.name, activeTask.completedCount, activeTask.failedCount, activeTask.lastErrors, activeTask.silent);
+            }
+            
+            // Handle repetition - Only reschedule if at least one profile succeeded or it's a scheduled task
+            // If it failed completely on the first run, don't auto-reschedule to prevent spam loops
+            if (task.repeat_interval > 0 && (activeTask.completedCount > 0 || task.last_run_at !== null)) {
                 const nextRun = Date.now() + (task.repeat_interval * 60 * 1000);
                 await this.rescheduleTask(task.id, nextRun);
             } else if (task.cron_expression) {
@@ -326,5 +469,106 @@ export class JarvisTaskManager {
     // legacy method wrapper for compatibility
     async runPendingTasks() {
         this.runScheduler();
+    }
+
+    /**
+     * Stop a specific task and its running profiles
+     */
+    async stopTask(taskId: string) {
+        const active = this.activeTasks.get(taskId);
+        
+        // Clear repeat interval and scheduled_at in DB to prevent it from coming back
+        await new Promise<void>((resolve) => {
+            this.db.run('UPDATE jarvis_tasks SET status = "failed", repeat_interval = 0, scheduled_at = NULL WHERE id = ?', [taskId], () => resolve());
+        });
+
+        if (active) {
+            active.remainingProfileIds = [];
+            this.activeTasks.delete(taskId);
+            console.log(`[JarvisTaskManager] Active task ${taskId} stopped by user`);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Stop all active tasks
+     */
+    async stopAllTasks() {
+        const ids = Array.from(this.activeTasks.keys());
+        for (const id of ids) {
+            await this.stopTask(id);
+        }
+        
+        // Also ensure DB status is updated for any tasks that might be in 'pending' or 'scheduled'
+        await new Promise<void>((resolve) => {
+            this.db.run('UPDATE jarvis_tasks SET status = "failed" WHERE status IN ("pending", "running", "scheduled")', [], () => resolve());
+        });
+
+        console.log('[JarvisTaskManager] All tasks stopped and cancelled');
+        return ids.length;
+    }
+
+    private statusQueue: Map<string, { role: string, content: string, isStatusUpdate: boolean }[]> = new Map();
+    private isProcessingQueue = false;
+
+    /**
+     * Appends a technical status message to a session's chat history
+     */
+    private async appendStatusToSession(sessionId: string, message: string) {
+        if (!this.statusQueue.has(sessionId)) {
+            this.statusQueue.set(sessionId, []);
+        }
+        this.statusQueue.get(sessionId)!.push({ role: 'system', content: message, isStatusUpdate: true });
+        
+        this.processStatusQueue();
+    }
+
+    private async processStatusQueue() {
+        if (this.isProcessingQueue || this.statusQueue.size === 0) return;
+        this.isProcessingQueue = true;
+
+        try {
+            const sessionIds = Array.from(this.statusQueue.keys());
+            for (const sessionId of sessionIds) {
+                const pendingMessages = this.statusQueue.get(sessionId);
+                if (!pendingMessages || pendingMessages.length === 0) {
+                    this.statusQueue.delete(sessionId);
+                    continue;
+                }
+
+                // Batch process messages for this session
+                const messagesToAppend = [...pendingMessages];
+                this.statusQueue.set(sessionId, []); // Clear queue for this session while processing
+
+                await new Promise<void>((resolve) => {
+                    this.db.get('SELECT history FROM jarvis_sessions WHERE id = ?', [sessionId], (err, row: any) => {
+                        if (row) {
+                            try {
+                                const history = JSON.parse(EncryptionService.decrypt(row.history));
+                                history.push(...messagesToAppend);
+                                const encrypted = EncryptionService.encrypt(JSON.stringify(history));
+                                this.db.run('UPDATE jarvis_sessions SET history = ?, updated_at = ? WHERE id = ?', 
+                                    [encrypted, Date.now(), sessionId], () => resolve());
+                            } catch (e) {
+                                resolve();
+                            }
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+                
+                if (this.statusQueue.get(sessionId)?.length === 0) {
+                    this.statusQueue.delete(sessionId);
+                }
+            }
+        } finally {
+            this.isProcessingQueue = false;
+            // Check if more messages arrived during processing
+            if (this.statusQueue.size > 0) {
+                setTimeout(() => this.processStatusQueue(), 100);
+            }
+        }
     }
 }

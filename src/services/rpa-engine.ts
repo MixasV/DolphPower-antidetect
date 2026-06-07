@@ -114,59 +114,88 @@ export class RPAEngine {
         });
     }
 
-    /**
-     * Resolve dynamic values like {{FILE:path|line:N}}, {{VAR:name}}, or {{name}}
-     */
     private async resolveValue(value: string, executionVars: Record<string, string> = {}): Promise<string> {
         if (!value || typeof value !== 'string') return value;
 
-        // Handle {{VAR:name}} and {{name}} (common Jarvis format)
-        let resolved = value.replace(/\{\{(?:VAR:)?([^|{}]+)\}\}/g, (match, name) => {
-            const cleanName = name.trim();
-            // Don't match FILE: patterns here
-            if (cleanName.startsWith('FILE:')) return match;
-            return executionVars[cleanName] !== undefined ? executionVars[cleanName] : match;
-        });
+        let resolved = value;
 
-        // Handle {{FILE:path|line:N}} or {{FILE:path|line:INDEX}}
-        const fileMatches = resolved.match(/\{\{FILE:([^|{}]+)(?:\|line:(\w+))?\}\}/g);
-        if (fileMatches) {
-            for (const match of fileMatches) {
-                const parts = match.slice(7, -2).split('|');
-                const filePath = parts[0];
-                let lineIndex = 0;
+        // 1. Handle {{FILE:path|line:N}} or {{FILE:path|line:INDEX}}
+        // Regex improved to handle Windows paths, spaces, and optional line index more reliably
+        const fileRegex = /\{\{FILE:([\s\S]+?)(?:\|line:([\s\S]+?))?\}\}/gi;
+        
+        // Use a loop to handle multiple matches manually to support async resolution
+        let match;
+        while ((match = fileRegex.exec(resolved)) !== null) {
+            const fullMatch = match[0];
+            const filePathRaw = match[1].trim();
+            const linePart = match[2]?.trim();
+            
+            let lineIndex = 0;
+            if (linePart === 'INDEX') {
+                lineIndex = parseInt(executionVars['INDEX'] || '0');
+            } else if (linePart) {
+                lineIndex = parseInt(linePart) || 0;
+            }
 
-                if (parts[1]) {
-                    const linePart = parts[1].split(':')[1];
-                    if (linePart === 'INDEX') {
-                        lineIndex = parseInt(executionVars['INDEX'] || '0');
-                    } else {
-                        lineIndex = parseInt(linePart) || 0;
-                    }
+            try {
+                // Support both slash types and normalize
+                const filePath = filePathRaw.replace(/\//g, path.sep).replace(/\\/g, path.sep);
+                
+                // Explicit whitelist check for attached files
+                let isWhitelisted = false;
+                if (executionVars['_ALLOWED_PATHS']) {
+                    try {
+                        const allowed = JSON.parse(executionVars['_ALLOWED_PATHS']);
+                        if (Array.isArray(allowed) && allowed.some(p => path.resolve(p) === path.resolve(filePath))) {
+                            isWhitelisted = true;
+                        }
+                    } catch(e) {}
                 }
 
-                try {
-                    const sanitizedPath = PathSanitizer.sanitize(filePath);
-                    if (!sanitizedPath) {
-                        console.error(`[Security] RPA blocked access to path: ${filePath}`);
-                        resolved = resolved.replace(match, '');
-                        continue;
-                    }
+                const sanitizedPath = isWhitelisted ? path.resolve(filePath) : PathSanitizer.sanitize(filePath);
+                
+                if (!sanitizedPath) {
+                    console.error(`[Security] RPA blocked access to path: ${filePathRaw}`);
+                    resolved = resolved.replace(fullMatch, `[ACCESS_DENIED: ${filePathRaw}]`);
+                    continue;
+                }
 
-                    let lines = this.fileCache.get(sanitizedPath);
-                    if (!lines) {
+                let lines = this.fileCache.get(sanitizedPath);
+                if (!lines) {
+                    try {
                         const content = await fs.readFile(sanitizedPath, 'utf8');
                         lines = content.split(/\r?\n/).filter(line => line.trim());
                         this.fileCache.set(sanitizedPath, lines);
+                    } catch (readErr: any) {
+                        console.error(`[RPA] File read error: ${sanitizedPath}`, readErr.message);
+                        resolved = resolved.replace(fullMatch, `[FILE_ERROR: ${filePathRaw}]`);
+                        continue;
                     }
-                    const lineValue = lines[lineIndex % lines.length] || '';
-                    resolved = resolved.replace(match, lineValue);
-                } catch (e) {
-                    console.error(`Failed to read file for RPA: ${filePath}`, e);
-                    resolved = resolved.replace(match, '');
                 }
+
+                if (lines && lines.length > 0) {
+                    const lineValue = lines[lineIndex % lines.length] || '';
+                    resolved = resolved.replace(fullMatch, lineValue);
+                } else {
+                    resolved = resolved.replace(fullMatch, '');
+                }
+            } catch (e: any) {
+                console.error(`Failed to resolve file placeholder: ${fullMatch}`, e.message);
+                resolved = resolved.replace(fullMatch, '');
             }
+            
+            // Reset regex index because we modified the string
+            fileRegex.lastIndex = 0;
         }
+
+        // 2. Handle {{VAR:name}} and {{name}} (common Jarvis format)
+        resolved = resolved.replace(/\{\{(?:VAR:)?([^|{}]+)\}\}/g, (match, name) => {
+            const cleanName = name.trim();
+            if (cleanName.includes(':') && !cleanName.startsWith('VAR:')) return match;
+            
+            const val = executionVars[cleanName];
+            return val !== undefined ? val : match;
+        });
 
         return resolved;
     }
@@ -178,27 +207,73 @@ export class RPAEngine {
         page: any,
         scenario: RPAScenario,
         externalVars: Record<string, string> = {},
-        profileId?: string
+        profileId?: string,
+        debug: boolean = false,
+        onProgress?: (progress: { currentStep: number; totalSteps: number; action: RPAAction; status: string; details?: string }) => void
     ): Promise<{ success: boolean; results: any[]; errors: any[] }> {
         const results: any[] = [];
         const errors: any[] = [];
         const loops = scenario.loops || 1;
+        const totalSteps = scenario.actions.length * loops;
         const executionVars = { ...(scenario.variables || {}), ...externalVars };
 
         // Clear file cache at start of scenario
         this.fileCache.clear();
 
+        let stepCounter = 0;
         for (let i = 0; i < loops; i++) {
             for (const action of scenario.actions) {
+                stepCounter++;
                 try {
+                    if (debug) console.log(`[RPA-Debug] Executing ${action.type}...`);
+                    
+                    if (onProgress) {
+                        onProgress({ 
+                            currentStep: stepCounter, 
+                            totalSteps, 
+                            action, 
+                            status: 'executing' 
+                        });
+                    }
+
                     const result = await this.executeAction(page, action, executionVars, profileId);
                     results.push(result);
+                    
+                    if (onProgress) {
+                        onProgress({ 
+                            currentStep: stepCounter, 
+                            totalSteps, 
+                            action, 
+                            status: 'success',
+                            details: JSON.stringify(result)
+                        });
+                    }
+                    
+                    // In debug mode, we might want to take a screenshot after each step
+                    if (debug && (action.type === 'click' || action.type === 'type' || action.type === 'navigate')) {
+                        try {
+                            const ssName = `debug-${Date.now()}.png`;
+                            await this.performAction(page, { type: 'screenshot', value: ssName } as any, executionVars, profileId);
+                            results.push({ debug_screenshot: ssName });
+                        } catch(e) {}
+                    }
                 } catch (e: any) {
                     errors.push({ action, error: e.message });
-                    if (scenario.onError === 'stop') break;
+                    
+                    if (onProgress) {
+                        onProgress({ 
+                            currentStep: stepCounter, 
+                            totalSteps, 
+                            action, 
+                            status: 'failed',
+                            details: e.message
+                        });
+                    }
+
+                    if (scenario.onError === 'stop' || debug) break; // In debug, stop on first error
                 }
             }
-            if (scenario.onError === 'stop' && errors.length > 0) break;
+            if ((scenario.onError === 'stop' || debug) && errors.length > 0) break;
         }
 
         return { success: errors.length === 0, results, errors };
@@ -208,25 +283,44 @@ export class RPAEngine {
      * Execute a single action
      */
     private async executeAction(page: any, action: RPAAction, executionVars: Record<string, string> = {}, profileId?: string): Promise<any> {
+        // Normalize action: Jarvis often sends "action" instead of "type" or puts everything inside "args"
+        const normalizedAction = { ...action };
+        
+        // 1. Normalize type/action
+        if (!normalizedAction.type && (action as any).action) {
+            normalizedAction.type = (action as any).action;
+        }
+        if (!normalizedAction.type && normalizedAction.args?.action) {
+            normalizedAction.type = normalizedAction.args.action;
+        }
+        if (!normalizedAction.type && normalizedAction.args?.type) {
+            normalizedAction.type = normalizedAction.args.type;
+        }
+
+        // 2. Normalize args: merge from normalizedAction.args into the action itself if missing
+        if (normalizedAction.args && typeof normalizedAction.args === 'object') {
+            for (const [key, val] of Object.entries(normalizedAction.args)) {
+                if ((normalizedAction as any)[key] === undefined) {
+                    (normalizedAction as any)[key] = val;
+                }
+            }
+        }
+
         // Resolve dynamic values in action properties
-        const resolvedAction = { ...action };
-        if (resolvedAction.selector) resolvedAction.selector = await this.resolveValue(resolvedAction.selector, executionVars);
-        if (resolvedAction.text) resolvedAction.text = await this.resolveValue(resolvedAction.text, executionVars);
-        if (resolvedAction.value) resolvedAction.value = await this.resolveValue(resolvedAction.value, executionVars);
-        if (resolvedAction.url) resolvedAction.url = await this.resolveValue(resolvedAction.url, executionVars);
+        if (normalizedAction.selector) normalizedAction.selector = await this.resolveValue(normalizedAction.selector, executionVars);
+        if (normalizedAction.text) normalizedAction.text = await this.resolveValue(normalizedAction.text, executionVars);
+        if (normalizedAction.value) normalizedAction.value = await this.resolveValue(normalizedAction.value, executionVars);
+        if (normalizedAction.url) normalizedAction.url = await this.resolveValue(normalizedAction.url, executionVars);
 
         try {
-            return await this.performAction(page, resolvedAction, executionVars, profileId);
+            return await this.performAction(page, normalizedAction, executionVars, profileId);
         } catch (error: any) {
             // AI Healing Logic
-            if (this.jarvisService && resolvedAction.selector && !resolvedAction.healingAttempted) {
-                console.log(`[RPA] Action ${resolvedAction.type} failed for ${resolvedAction.selector}. Attempting AI healing...`);
+            if (this.jarvisService && normalizedAction.selector && !normalizedAction.healingAttempted) {
+                console.log(`[RPA] Action ${normalizedAction.type} failed for ${normalizedAction.selector}. Attempting AI healing...`);
                 
                 try {
-                    // Smart HTML Context capture: 
-                    // 1. Try to find the closest parent that still exists
-                    // 2. Extract interactive elements within that parent
-                    // 3. Fallback to a broader but cleaned-up search
+                    // Smart HTML Context capture
                     const htmlContext = await page.evaluate((sel: string) => {
                         const getCleanEl = (el: any) => {
                             const attrs = ['id', 'class', 'name', 'type', 'value', 'placeholder', 'aria-label', 'role', 'href'];
@@ -241,7 +335,6 @@ export class RPAEngine {
                         let contextEl: any = null;
                         const parts = sel.split(/[ >+~]/).filter(Boolean);
                         
-                        // Walk backwards to find existing parent
                         for (let i = parts.length - 1; i >= 0; i--) {
                             try {
                                 const partial = parts.slice(0, i).join(' ');
@@ -254,22 +347,21 @@ export class RPAEngine {
                         
                         if (!contextEl) contextEl = (document as any).body;
 
-                        // Get interactive elements in context
                         const interactive = Array.from(contextEl.querySelectorAll('button, input, a, [role="button"], select, [onclick]'))
-                            .slice(0, 40) // Limit to avoid token bloat
+                            .slice(0, 40)
                             .map(el => getCleanEl(el))
                             .join('\n');
 
                         return `Target Selector: ${sel}\nContext Parent: ${contextEl.tagName}\nInteractive Elements:\n${interactive}`;
-                    }, resolvedAction.selector);
+                    }, normalizedAction.selector);
 
-                    const newSelector = await this.jarvisService.healSelector(resolvedAction.selector, htmlContext, resolvedAction.type);
+                    const newSelector = await this.jarvisService.healSelector(normalizedAction.selector, htmlContext, normalizedAction.type);
                     
-                    if (newSelector && newSelector !== resolvedAction.selector) {
+                    if (newSelector && newSelector !== normalizedAction.selector) {
                         console.log(`[RPA] Jarvis found new selector: ${newSelector}. Retrying...`);
-                        resolvedAction.selector = newSelector;
-                        resolvedAction.healingAttempted = true;
-                        return await this.performAction(page, resolvedAction, executionVars);
+                        normalizedAction.selector = newSelector;
+                        normalizedAction.healingAttempted = true;
+                        return await this.performAction(page, normalizedAction, executionVars);
                     }
                 } catch (healingError) {
                     console.error('[RPA] AI Healing failed:', healingError);
@@ -280,12 +372,23 @@ export class RPAEngine {
     }
 
     private async performAction(page: any, resolvedAction: RPAAction, executionVars: Record<string, string>, profileId?: string): Promise<any> {
+        // Extract common arguments from either direct properties or Jarvis-style 'args' object
+        const selector = resolvedAction.selector || resolvedAction.args?.selector;
+        const value = resolvedAction.value !== undefined ? resolvedAction.value : resolvedAction.args?.value;
+        const text = resolvedAction.text || resolvedAction.args?.text;
+        const key = resolvedAction.key || resolvedAction.args?.key;
+        const url = resolvedAction.url || resolvedAction.args?.url;
+        const pathParam = resolvedAction.path || resolvedAction.args?.path;
+        const contentParam = resolvedAction.content || resolvedAction.args?.content;
+        const variableParam = resolvedAction.variableName || resolvedAction.variable || resolvedAction.args?.variable || resolvedAction.args?.variableName;
+        const timeoutParam = resolvedAction.timeout || resolvedAction.args?.timeout || resolvedAction.ms || resolvedAction.args?.ms;
+
         switch (resolvedAction.type) {
             case 'click':
-                if (!resolvedAction.selector) throw new Error('Selector required for click action');
+                if (!selector) throw new Error('Selector required for click action');
                 
                 try {
-                    const box = await page.$eval(resolvedAction.selector, (el: any) => {
+                    const box = await page.$eval(selector, (el: any) => {
                         const { x, y, width, height } = el.getBoundingClientRect();
                         return { x, y, width, height };
                     });
@@ -303,14 +406,14 @@ export class RPAEngine {
                     await this.wait(30 + Math.random() * 100);
                     await page.mouse.up();
                 } catch (e) {
-                    await page.click(resolvedAction.selector);
+                    await page.click(selector);
                 }
-                return { clicked: resolvedAction.selector };
+                return { clicked: selector };
 
             case 'hover':
-                if (!resolvedAction.selector) throw new Error('Selector required for hover action');
+                if (!selector) throw new Error('Selector required for hover action');
                 try {
-                    const box = await page.$eval(resolvedAction.selector, (el: any) => {
+                    const box = await page.$eval(selector, (el: any) => {
                         const { x, y, width, height } = el.getBoundingClientRect();
                         return { x, y, width, height };
                     });
@@ -318,24 +421,23 @@ export class RPAEngine {
                     const targetY = box.y + box.height / 2 + (Math.random() * 10 - 5);
                     await this.moveMouseHumanly(page, targetX, targetY);
                 } catch (e) {
-                    await page.hover(resolvedAction.selector);
+                    await page.hover(selector);
                 }
-                return { hovered: resolvedAction.selector };
+                return { hovered: selector };
 
             case 'type':
-                const textToType = resolvedAction.text || resolvedAction.value || resolvedAction.args?.text;
-                const typeSelector = resolvedAction.selector || resolvedAction.args?.selector;
-                if (!typeSelector || textToType === undefined) {
+                const textToType = text || value;
+                if (!selector || textToType === undefined) {
                     throw new Error('Selector and text/value required for type action');
                 }
                 
-                await page.focus(typeSelector);
+                await page.focus(selector);
                 await this.typeHumanly(page, String(textToType));
-                return { typed: textToType, into: typeSelector };
+                return { typed: textToType, into: selector };
 
             case 'pressKey':
             case 'keyPress':
-                const keyToPress = resolvedAction.key || resolvedAction.value || resolvedAction.args?.key;
+                const keyToPress = key || value;
                 if (!keyToPress) throw new Error('Key required for pressKey action');
                 await page.keyboard.press(keyToPress);
                 return { pressed: keyToPress };
@@ -349,17 +451,20 @@ export class RPAEngine {
                 return { back: true };
 
             case 'scroll':
-                if (resolvedAction.x !== undefined && resolvedAction.y !== undefined) {
+                const scrollX = resolvedAction.x !== undefined ? resolvedAction.x : (resolvedAction.args?.x || 0);
+                const scrollY = resolvedAction.y !== undefined ? resolvedAction.y : (resolvedAction.args?.y || 500);
+
+                if (scrollX !== undefined && scrollY !== undefined) {
                     await page.evaluate(`
                         window.scrollTo({
-                            top: ${resolvedAction.y},
-                            left: ${resolvedAction.x},
+                            top: ${scrollY},
+                            left: ${scrollX},
                             behavior: 'smooth'
                         })
                     `);
-                } else if (resolvedAction.selector) {
+                } else if (selector) {
                     await page.evaluate(`
-                        const element = document.querySelector('${resolvedAction.selector}');
+                        const element = document.querySelector('${selector}');
                         if (element) {
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }
@@ -369,13 +474,13 @@ export class RPAEngine {
                 return { scrolled: true };
 
             case 'wait':
-                if (resolvedAction.selector) {
-                    const timeout = resolvedAction.timeout || resolvedAction.ms || 30000;
-                    await page.waitForSelector(resolvedAction.selector, { timeout });
-                    return { waitedForSelector: resolvedAction.selector, timeout };
+                if (selector) {
+                    const timeout = timeoutParam || 30000;
+                    await page.waitForSelector(selector, { timeout });
+                    return { waitedForSelector: selector, timeout };
                 }
 
-                const waitTime = resolvedAction.ms || resolvedAction.delay || 1000;
+                const waitTime = timeoutParam || resolvedAction.delay || resolvedAction.args?.delay || 1000;
                 // Humanization: Perform micro-movements during long waits
                 if (waitTime > 2000) {
                     const iterations = Math.floor(waitTime / 1000);
@@ -395,7 +500,7 @@ export class RPAEngine {
                 return { waited: waitTime };
 
             case 'screenshot':
-                const rawFilename = resolvedAction.value || `screenshot-${Date.now()}.png`;
+                const rawFilename = value || text || `screenshot-${Date.now()}.png`;
                 const sanitizedFilename = PathSanitizer.sanitizeFilename(rawFilename);
                 const screenshotPath = path.join(PathSanitizer.getProjectRoot(), '.screens', sanitizedFilename);
                 
@@ -406,38 +511,36 @@ export class RPAEngine {
                 return { screenshot: sanitizedFilename };
 
             case 'navigate':
-                const targetUrl = resolvedAction.url || resolvedAction.value;
+                const targetUrl = url || value || text;
                 if (!targetUrl) throw new Error('URL required for navigate action');
                 await page.goto(targetUrl, { waitUntil: 'networkidle2' });
                 return { navigated: targetUrl };
 
             case 'select':
-                if (!resolvedAction.selector || !resolvedAction.value) {
+                if (!selector || value === undefined) {
                     throw new Error('Selector and value required for select action');
                 }
-                await page.select(resolvedAction.selector, resolvedAction.value);
-                return { selected: resolvedAction.value, in: resolvedAction.selector };
+                await page.select(selector, String(value));
+                return { selected: value, in: selector };
 
             case 'variable':
-                const vName = resolvedAction.variableName || resolvedAction.variable;
-                if (vName && resolvedAction.value !== undefined) {
-                    executionVars[vName] = String(resolvedAction.value);
-                    return { variableSet: vName };
+                if (variableParam && value !== undefined) {
+                    executionVars[variableParam] = String(value);
+                    return { variableSet: variableParam };
                 }
                 return { error: 'Variable name and value required' };
 
             case 'getText':
-                const getVarName = resolvedAction.variableName || resolvedAction.variable;
-                if (!resolvedAction.selector || !getVarName) {
+                if (!selector || !variableParam) {
                     throw new Error('Selector and variableName required for getText action');
                 }
-                const text = await page.$eval(resolvedAction.selector, (el: any) => el.textContent || el.innerText || '');
-                executionVars[getVarName] = text.trim();
-                return { getText: text.trim(), into: getVarName };
+                const textResult = await page.$eval(selector, (el: any) => el.textContent || el.innerText || '');
+                executionVars[variableParam] = textResult.trim();
+                return { getText: textResult.trim(), into: variableParam };
 
             case 'writeFile':
-                const filePath = resolvedAction.path || resolvedAction.value;
-                const content = resolvedAction.content || resolvedAction.text || '';
+                const filePath = pathParam || value;
+                const fileContent = contentParam || text || '';
                 if (!filePath) throw new Error('Path required for writeFile action');
                 
                 const sanitizedWritePath = PathSanitizer.sanitize(filePath);
@@ -446,12 +549,13 @@ export class RPAEngine {
                 // Ensure directory exists
                 await fs.mkdir(path.dirname(sanitizedWritePath), { recursive: true }).catch(() => {});
                 
-                if (resolvedAction.append) {
-                    await fs.appendFile(sanitizedWritePath, content, 'utf8');
+                const isAppend = resolvedAction.append || resolvedAction.args?.append || false;
+                if (isAppend) {
+                    await fs.appendFile(sanitizedWritePath, fileContent, 'utf8');
                 } else {
-                    await fs.writeFile(sanitizedWritePath, content, 'utf8');
+                    await fs.writeFile(sanitizedWritePath, fileContent, 'utf8');
                 }
-                return { writeFile: sanitizedWritePath, appended: !!resolvedAction.append };
+                return { writeFile: sanitizedWritePath, appended: !!isAppend };
 
             case 'installExtension':
                 if (!this.extensionManager) throw new Error('ExtensionManager not initialized in RPAEngine');

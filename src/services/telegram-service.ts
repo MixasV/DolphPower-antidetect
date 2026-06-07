@@ -166,14 +166,14 @@ export class TelegramService {
         }
     }
 
-    async notifyTaskStarted(taskName: string, profileCount: number) {
-        if (!this.notifySummary) return;
+    async notifyTaskStarted(taskName: string, profileCount: number, silent: boolean = false) {
+        if (!this.notifySummary || silent) return;
         const message = `🚀 <b>Task Started</b>\n\n<b>Name:</b> ${taskName}\n<b>Profiles:</b> ${profileCount}\n<b>Time:</b> ${new Date().toLocaleString()}`;
         await this.sendMessage(message);
     }
 
-    async notifyTaskCompleted(taskName: string, successCount: number, failCount: number, errors: string[]) {
-        if (!this.notifySummary) return;
+    async notifyTaskCompleted(taskName: string, successCount: number, failCount: number, errors: string[], silent: boolean = false) {
+        if (!this.notifySummary || silent) return;
         
         let message = `✅ <b>Task Completed</b>\n\n<b>Name:</b> ${taskName}\n<b>Success:</b> ${successCount}\n<b>Errors:</b> ${failCount}`;
         
@@ -184,8 +184,8 @@ export class TelegramService {
         await this.sendMessage(message);
     }
 
-    async notifyProfileError(taskName: string, profileName: string, error: string) {
-        if (!this.notifyError) return;
+    async notifyProfileError(taskName: string, profileName: string, error: string, silent: boolean = false) {
+        if (!this.notifyError || silent) return;
         const message = `❌ <b>Profile Error</b>\n\n<b>Task:</b> ${taskName}\n<b>Profile:</b> ${profileName}\n<b>Error:</b> <code>${error}</code>`;
         await this.sendMessage(message);
     }

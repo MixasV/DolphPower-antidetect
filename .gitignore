@@ -11,3 +11,6 @@ coverage/
 .docs/
 .screens/
 .tests/
+AGENTS.md
+.factory/
+*.bat

@@ -225,9 +225,13 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
               id TEXT PRIMARY KEY,
               name TEXT NOT NULL,
               url TEXT NOT NULL,
+              group_id TEXT, -- Associated group or NULL for all
               created_at TEXT NOT NULL
             )
           `);
+
+          // Migration: Add group_id to bookmarks
+          db.run(`ALTER TABLE bookmarks ADD COLUMN group_id TEXT`, () => { });
 
           // Default Extensions
           db.run(`
@@ -236,9 +240,13 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
               name TEXT NOT NULL,
               path TEXT NOT NULL,
               is_default INTEGER DEFAULT 1,
+              group_id TEXT, -- Associated group or NULL for all
               created_at TEXT NOT NULL
             )
           `);
+
+          // Migration: Add group_id to default_extensions
+          db.run(`ALTER TABLE default_extensions ADD COLUMN group_id TEXT`, () => { });
 
           // Extensions table (managed by ExtensionManager but defined here for consistency)
           db.run(`
@@ -247,11 +255,15 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
               name TEXT NOT NULL,
               path TEXT NOT NULL,
               enabled INTEGER DEFAULT 1,
+              group_id TEXT, -- Associated group or NULL for all
               created_at INTEGER NOT NULL,
               version TEXT,
               description TEXT
             )
           `);
+
+          // Migration: Add group_id to extensions
+          db.run(`ALTER TABLE extensions ADD COLUMN group_id TEXT`, () => { });
 
           // Profile Extensions (Join table)
           db.run(`
@@ -373,6 +385,9 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           // Migration: Add cron_expression
           db.run(`ALTER TABLE jarvis_tasks ADD COLUMN cron_expression TEXT`, () => {});
           db.run(`ALTER TABLE jarvis_tasks ADD COLUMN repeat_interval INTEGER DEFAULT 0`, () => {});
+          db.run(`ALTER TABLE jarvis_tasks ADD COLUMN silent INTEGER DEFAULT 0`, () => {});
+          db.run(`ALTER TABLE jarvis_tasks ADD COLUMN allowed_paths TEXT`, () => {});
+          db.run(`ALTER TABLE jarvis_tasks ADD COLUMN parent_session_id TEXT`, () => {});
 
           // App Authentication & Security
           db.run(`

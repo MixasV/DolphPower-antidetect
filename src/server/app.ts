@@ -1,4 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
+import path from 'path';
+import * as fs from 'fs/promises';
 import cors from 'cors';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
@@ -26,6 +28,11 @@ import { AuthService } from '../services/auth-service';
 import { DataMigrationService } from '../services/data-migration-service';
 import { SecurityService } from '../services/security-service';
 import { LocalMigrationService } from '../services/local-migration-service';
+// New security services for wallet protection
+import { WalletSecurityService } from '../services/wallet-security.service';
+import { ClipboardProtectionService } from '../services/clipboard-protection.service';
+import { ScreenProtectionService } from '../services/screen-protection.service';
+import { EmergencyLockoutService } from '../services/emergency-lockout.service';
 
 export function createApp(db: Database): Express {
     const app = express();
@@ -46,6 +53,20 @@ export function createApp(db: Database): Express {
     const freeProxyFetcher = new FreeProxyFetcher(dbService);
     const jarvisService = new JarvisService();
     const jarvisController = new JarvisController(chromiumManager, jarvisService);
+    
+    // Initialize wallet security service (will be fully initialized after user login)
+    const walletSecurityService = new WalletSecurityService();
+    
+    // Initialize clipboard protection service
+    const clipboardProtectionService = ClipboardProtectionService.getClipboardProtectionService();
+    // Start monitoring clipboard for sensitive data
+    clipboardProtectionService.startMonitoring();
+    
+    // Initialize screen protection service
+    const screenProtectionService = ScreenProtectionService.getScreenProtectionService();
+    
+    // Initialize emergency lockout service
+    const emergencyLockoutService = EmergencyLockoutService.getInstance();
     const rpaEngine = new RPAEngine(db, jarvisService, extensionManager);
     const jarvisTaskManager = new JarvisTaskManager(db, chromiumManager, rpaEngine, profileManager);
     const telegramService = new TelegramService();
@@ -139,6 +160,21 @@ export function createApp(db: Database): Express {
     const cleanupTrash = () => {
         console.log('🧹 Running automatic trash cleanup (10-day threshold)...');
         profileManager.cleanupOldTrash(10).catch(e => console.error('Trash cleanup failed:', e));
+        
+        // Also cleanup old debug screenshots
+        const screensDir = path.join(__dirname, '../../.screens');
+        fs.readdir(screensDir).then(async (files: string[]) => {
+            const now = Date.now();
+            const threshold = 24 * 60 * 60 * 1000; // 24 hours
+            for (const file of files) {
+                const filePath = path.join(screensDir, file);
+                const stats = await fs.stat(filePath);
+                if (now - stats.mtimeMs > threshold) {
+                    await fs.unlink(filePath).catch(() => {});
+                }
+            }
+            console.log(`🧹 Cleaned up old screenshots from: ${screensDir}`);
+        }).catch(() => {});
     };
     cleanupTrash();
     setInterval(cleanupTrash, 12 * 60 * 60 * 1000);
@@ -148,7 +184,6 @@ export function createApp(db: Database): Express {
     app.use(express.json({ limit: '10mb' }));
 
     // Serve static UI files
-    const path = require('path');
     const uiPath = path.join(__dirname, '../ui');
     app.use('/ui', express.static(uiPath));
     console.log(`📁 Serving UI from: ${uiPath}`);
@@ -775,46 +810,27 @@ export function createApp(db: Database): Express {
         }
 
         // Auto-Sync logic (Sync Language, Timezone, Geolocation and WebRTC with Proxy IP)
+        // Note: This check is now mostly handled inside applyFingerprintViaCDP to avoid blocking initial launch,
+        // but we keep a non-blocking background check here to cache the IP for the UI.
         if (profile.proxy_id || fingerprint.language === 'auto_ip') {
-            try {
-                console.log(`🌐 Synchronizing profile ${profile.name} with ${profile.proxy_id ? 'Proxy' : 'Direct'} IP...`);
-                const result = proxyInfo 
-                    ? await ipChecker.checkProxyIP(proxyInfo)
-                    : await ipChecker.getMyIP();
-                
-                if (result.success && result.info) {
-                    console.log(`🌐 Syncing with IP: ${result.info.ip} (${result.info.countryCode}, ${result.info.timezone})`);
+            (async () => {
+                try {
+                    const result = proxyInfo 
+                        ? await ipChecker.checkProxyIP(proxyInfo)
+                        : await ipChecker.getMyIP();
                     
-                    // 1. Sync Language
-                    const locale = ipChecker.getLanguageForCountry(result.info.countryCode || 'US');
-                    fingerprintDataToApply.languages.language = locale;
-                    fingerprintDataToApply.languages.languages = [locale, locale.split('-')[0], 'en-US', 'en'];
-                    fingerprintDataToApply.languages.acceptLanguage = `${locale},${locale.split('-')[0]};q=0.9,en-US;q=0.8,en;q=0.7`;
-                    
-                    // 3. Sync Geolocation
-                    if (result.info.lat && result.info.lon) {
-                        fingerprintDataToApply.geolocation = {
-                            latitude: result.info.lat,
-                            longitude: result.info.lon,
-                            accuracy: 100
-                        };
+                    if (result.success && result.info) {
+                        // Update profile IP cache in DB
+                        await profileManager.updateProfileIP(profile.id, {
+                            ip: result.info.ip,
+                            country: result.info.countryCode || result.info.country,
+                            city: result.info.city
+                        });
                     }
-
-                    // 4. Sync WebRTC Public IP
-                    if (fingerprint.webrtc_mode === 'altered') {
-                        fingerprintDataToApply.webrtc.publicIp = result.info.ip;
-                    }
-                    
-                    // Update profile IP cache in DB
-                    await profileManager.updateProfileIP(profile.id, {
-                        ip: result.info.ip,
-                        country: result.info.countryCode || result.info.country,
-                        city: result.info.city
-                    });
+                } catch (e: any) {
+                    console.error(`🌐 Background IP-Sync failed: ${e.message}`);
                 }
-            } catch (e: any) {
-                console.error(`🌐 Auto-Sync failed: ${e.message}`);
-            }
+            })();
         }
 
         // Update last_opened_at and open_count
@@ -917,6 +933,19 @@ export function createApp(db: Database): Express {
     app.post('/v1.0/browser_profiles/:id/unlock', asyncHandler(async (req: Request, res: Response) => {
         await chromiumManager.unlockProfile(req.params.id);
         res.json({ success: true });
+    }));
+
+    /**
+     * Emergency Stop: Kills all tasks and profiles
+     */
+    app.post('/v1.0/system/emergency-stop', asyncHandler(async (req: Request, res: Response) => {
+        console.log('🛑 EMERGENCY STOP REQUESTED');
+        const tasksStopped = await jarvisTaskManager.stopAllTasks();
+        const profiles = chromiumManager.getRunningProfiles();
+        for (const p of profiles) {
+            await chromiumManager.terminateProfile(p.profileId);
+        }
+        res.json({ success: true, data: { tasksStopped, profilesStopped: profiles.length } });
     }));
 
     // ==================== PROXY ENDPOINTS ====================
@@ -1171,14 +1200,14 @@ export function createApp(db: Database): Express {
     // ==================== EXTENSION ENDPOINTS ====================
 
     app.post('/v1.0/extensions/add', asyncHandler(async (req: Request, res: Response) => {
-        const { name, path: sourcePath } = req.body;
+        const { name, path: sourcePath, group_id } = req.body;
 
         if (!name || !sourcePath) {
             res.status(400).json({ error: 'name and path are required' });
             return;
         }
 
-        const extension = await extensionManager.addExtension(name, sourcePath);
+        const extension = await extensionManager.addExtension(name, sourcePath, group_id);
         res.json({ success: true, data: extension });
     }));
 
@@ -1258,11 +1287,11 @@ export function createApp(db: Database): Express {
     }));
 
     app.post('/v1.0/extensions/chrome-store/install', asyncHandler(async (req: Request, res: Response) => {
-        const { extensionId } = req.body;
+        const { extensionId, group_id } = req.body;
         if (!extensionId) {
             return res.status(400).json({ success: false, error: 'extensionId is required' });
         }
-        const extension = await extensionManager.installFromChromeStore(extensionId);
+        const extension = await extensionManager.installFromChromeStore(extensionId, group_id);
         res.json({ success: true, data: extension });
     }));
 
@@ -1668,7 +1697,7 @@ export function createApp(db: Database): Express {
     }));
 
     app.post('/v1.0/bookmarks/bulk', asyncHandler(async (req: Request, res: Response) => {
-        const { bookmarks } = req.body;
+        const { bookmarks, group_id } = req.body;
         if (!bookmarks || !Array.isArray(bookmarks)) {
             return res.status(400).json({ success: false, error: 'Bookmarks array required' });
         }
@@ -1679,8 +1708,8 @@ export function createApp(db: Database): Express {
                 const id = `bm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 await new Promise<void>((resolve, reject) => {
                     db.run(
-                        'INSERT INTO bookmarks (id, name, url, created_at) VALUES (?, ?, ?, ?)',
-                        [id, bm.name, bm.url, new Date().toISOString()],
+                        'INSERT INTO bookmarks (id, name, url, group_id, created_at) VALUES (?, ?, ?, ?, ?)',
+                        [id, bm.name, bm.url, group_id || null, new Date().toISOString()],
                         (err) => { if (err) reject(err); else resolve(); }
                     );
                 });
@@ -1939,8 +1968,12 @@ export function createApp(db: Database): Express {
                         const toolCall = JSON.parse(jsonStr);
                         
                         // Merge external confirmation into tool args (only for the first iteration or if specifically passed)
-                        const toolArgs = { ...toolCall.args, confirmed: loopCount === 1 ? confirmed : undefined };
-                        const result = await jarvisToolManager.executeTool(toolCall.tool, toolArgs);
+                        const toolArgs = { 
+                            ...toolCall.args, 
+                            confirmed: loopCount === 1 ? confirmed : undefined,
+                            attachedFiles: attached_files // Automatically pass attached files to ALL tool calls
+                        };
+                        const result = await jarvisToolManager.executeTool(toolCall.tool, toolArgs, 'ui', session_id);
                         toolResult = result;
 
                         if (result.success) {
@@ -1949,6 +1982,9 @@ export function createApp(db: Database): Express {
                             
                             // If it requires confirmation (e.g. from ToolManager logic), we stop and ask user
                             if (result.requiresConfirmation) break;
+
+                            // Optimization: If it's a long-running task like RPA, stop the turn here to prevent AI loops
+                            if (toolCall.tool === 'runRpa' || toolCall.tool === 'bulkCreateProfiles') break;
 
                             // Otherwise, feed the result back to Jarvis to continue the task
                             currentHistory.push({ role: 'user', content: currentMessage });
@@ -1978,14 +2014,25 @@ export function createApp(db: Database): Express {
             break;
         }
         
-        // Save to history if session_id provided
+        // Save to history if session_id provided - ATOMIC MERGE to prevent overwriting real-time status updates
         if (session_id) {
-            const updatedHistory = [...(history || []), { role: 'user', content: message }, { role: 'assistant', content: finalResponse }];
-            const encryptedHistory = EncryptionService.encrypt(JSON.stringify(updatedHistory));
-            
             await new Promise<void>((resolve) => {
-                db.run('UPDATE jarvis_sessions SET history = ?, updated_at = ? WHERE id = ?', 
-                [encryptedHistory, Date.now(), session_id], () => resolve());
+                db.get('SELECT history FROM jarvis_sessions WHERE id = ?', [session_id], (err, row: any) => {
+                    let finalHistory = [];
+                    if (row) {
+                        try {
+                            finalHistory = JSON.parse(EncryptionService.decrypt(row.history));
+                        } catch (e) {}
+                    }
+                    
+                    // Append new messages to the LATEST state from DB
+                    finalHistory.push({ role: 'user', content: message });
+                    finalHistory.push({ role: 'assistant', content: finalResponse });
+                    
+                    const encrypted = EncryptionService.encrypt(JSON.stringify(finalHistory));
+                    db.run('UPDATE jarvis_sessions SET history = ?, updated_at = ? WHERE id = ?', 
+                        [encrypted, Date.now(), session_id], () => resolve());
+                });
             });
         }
 

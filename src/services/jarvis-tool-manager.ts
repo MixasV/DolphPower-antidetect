@@ -32,13 +32,13 @@ export class JarvisToolManager {
         private mcpManager?: MCPManager
     ) {}
 
-    async executeTool(toolName: string, args: any, source: 'ui' | 'telegram' = 'ui'): Promise<ToolResult> {
+    async executeTool(toolName: string, args: any, source: 'ui' | 'telegram' = 'ui', sessionId?: string): Promise<ToolResult> {
         const permission = this.config.permission_level || 'standard';
         const isConfirmed = args.confirmed === true;
 
         // Security: Telegram Sandbox
         if (source === 'telegram') {
-            const safeTools = this.config.tg_safe_tools ? JSON.parse(this.config.tg_safe_tools) : ['listProfiles', 'listProxies', 'getProfile', 'startProfile', 'stopProfile', 'listGroups'];
+            const safeTools = this.config.tg_safe_tools ? JSON.parse(this.config.tg_safe_tools) : ['listProfiles', 'listProxies', 'getProfile', 'startProfile', 'stopProfile', 'listGroups', 'stopAll', 'stopAllTasks'];
             if (!safeTools.includes(toolName)) {
                 return { success: false, error: `Tool '${toolName}' is not allowed via Telegram for security reasons.` };
             }
@@ -162,20 +162,52 @@ export class JarvisToolManager {
                     return { success: true, data: groups };
 
                 case 'runRpa':
+                case 'testRpa':
                     const profileIds = args.profileIds || (args.profileId ? [args.profileId] : []);
                     if (!args.scenarioId || profileIds.length === 0) {
                         return { success: false, error: 'scenarioId and profileIds are required' };
                     }
+                    
+                    const isTest = toolName === 'testRpa' || args.test === true;
+                    let taskName = args.taskName;
+                    const isRawScenario = Array.isArray(args.scenarioId) || (typeof args.scenarioId === 'string' && args.scenarioId.trim().startsWith('['));
+                    
+                    if (!taskName || taskName.trim().startsWith('[') || taskName.trim().startsWith('{') || taskName.length > 100) {
+                        taskName = isTest ? `ТЕСТ: ${args.scenarioName || 'Проверка'}` : (isRawScenario ? 'Автоматизация Jarvis' : 'RPA Задача');
+                    }
+
                     const taskId = await this.taskManager.createTask(
-                        args.taskName || `Jarvis RPA: ${args.scenarioId}`,
-                        args.scenarioId,
+                        taskName,
+                        typeof args.scenarioId === 'string' ? args.scenarioId : JSON.stringify(args.scenarioId),
                         profileIds,
                         {
                             scheduledAt: args.scheduledAt,
-                            repeatInterval: args.repeatInterval
+                            repeatInterval: args.repeatInterval,
+                            silent: isTest || args.silent, // Tests are always silent by default
+                            allowedPaths: args.attachedFiles, // Pass whitelisted files from UI
+                            sessionId: sessionId || args.session_id
                         }
                     );
-                    return { success: true, data: { action: 'runRpa', taskId, count: profileIds.length, scheduledAt: args.scheduledAt, repeatInterval: args.repeatInterval } };
+                    return { success: true, data: { action: toolName, taskId, isTest, count: profileIds.length } };
+
+                case 'getTaskStatus':
+                    if (!args.taskId) return { success: false, error: 'taskId is required' };
+                    const task: any = await new Promise((res) => {
+                        this.db.get('SELECT * FROM jarvis_tasks WHERE id = ?', [args.taskId], (err, row) => res(row));
+                    });
+                    if (!task) return { success: false, error: 'Task not found' };
+                    return { success: true, data: task };
+
+                case 'getTaskLogs':
+                    if (!args.taskId) return { success: false, error: 'taskId is required' };
+                    const taskLogs: any[] = await new Promise((res) => {
+                        this.db.all('SELECT * FROM jarvis_execution_logs WHERE session_id = ? ORDER BY started_at ASC', [args.taskId], (err, rows) => res(rows || []));
+                    });
+                    const decryptedTaskLogs = taskLogs.map(l => ({
+                        ...l,
+                        log_data: l.log_data ? EncryptionService.decrypt(l.log_data) : ''
+                    }));
+                    return { success: true, data: decryptedTaskLogs };
 
                 case 'installExtension':
                     const targetProfileIds = args.profileIds || (args.profileId ? [args.profileId] : []);
@@ -217,8 +249,18 @@ export class JarvisToolManager {
                     return { success: true, data: { action: 'startRecording', profileId: args.profileId, note: 'Recording started. Perform actions in the browser.' } };
 
                 case 'stopRecording':
-                    const logs = await this.jarvisController.stopRecording();
-                    return { success: true, data: { action: 'stopRecording', logs, note: 'Recording stopped. You can see the result in the chat.' } };
+                    const recordedLogs = await this.jarvisController.stopRecording();
+                    return { success: true, data: { action: 'stopRecording', logs: recordedLogs, note: 'Recording stopped. You can see the result in the chat.' } };
+
+                case 'stopAll':
+                case 'stopAllTasks':
+                    const stoppedCount = await this.taskManager.stopAllTasks();
+                    // Also stop all running profiles
+                    const runningProfiles = this.chromiumManager.getRunningProfiles();
+                    for (const rp of runningProfiles) {
+                        await this.chromiumManager.terminateProfile(rp.profileId);
+                    }
+                    return { success: true, data: { action: 'stopAll', tasksStopped: stoppedCount, profilesStopped: runningProfiles.length } };
 
                 case 'updateConfig':
                     // Map AI args to DB columns

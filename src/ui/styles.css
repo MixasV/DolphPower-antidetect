@@ -1029,6 +1029,9 @@ html, body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 16px;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 .extension-card {
@@ -1110,6 +1113,9 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 .bookmark-item {
@@ -1181,6 +1187,9 @@ html, body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 16px;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 .scenario-card {
@@ -2074,6 +2083,45 @@ html, body {
     text-align: center;
 }
 
+/* Real-time Status Updates */
+.message.system-status {
+    align-self: flex-start;
+    max-width: 95%;
+    margin-bottom: 4px;
+    animation: fadeIn 0.3s ease;
+}
+
+.status-msg-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    border-left: 2px solid var(--primary);
+}
+
+.status-icon {
+    width: 12px;
+    height: 12px;
+    color: var(--primary);
+    animation: pulse 2s infinite;
+}
+
+.status-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.message.system-status:hover .status-text {
+    white-space: normal;
+    word-break: break-all;
+}
+
 .jarvis-suggestions {
     display: flex;
     flex-wrap: wrap;
@@ -2100,20 +2148,44 @@ html, body {
 
 /* Jarvis Task Status Bar */
 .jarvis-task-status-bar {
-    display: flex;
-    gap: 10px;
-    padding: 10px 20px;
-    background: var(--bg-secondary);
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 12px;
+    padding: 10px 15px;
+    background: var(--bg-primary);
     border-bottom: 1px solid var(--border-color);
-    overflow-x: auto;
-    white-space: nowrap;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    white-space: nowrap !important;
     scrollbar-width: thin;
-    min-height: 50px;
+    min-height: 58px; /* Slightly increased to fit scrollbar better */
     align-items: center;
+    -webkit-overflow-scrolling: touch;
 }
 
 .jarvis-task-status-bar::-webkit-scrollbar {
-    height: 4px;
+    height: 6px;
+    display: block !important;
+}
+
+.jarvis-task-status-bar::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.2);
+    border-radius: 3px;
+}
+
+.jarvis-task-status-bar::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.jarvis-task-status-bar::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-hover);
+}
+
+.jarvis-task-status-bar.active-drag {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .jarvis-task-pill {
@@ -2128,6 +2200,7 @@ html, body {
     border: 1px solid var(--border-color);
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
 }
 
 .jarvis-task-pill:hover {

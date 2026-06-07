@@ -42,9 +42,98 @@ let runningProfiles = new Set();
 let recentlyCheckedProfileId = null;
 let statusInterval = null;
 
+// Initialize Jarvis UI events
+function initJarvisUI() {
+    const taskBar = document.getElementById('jarvis-task-status-bar');
+    if (taskBar) {
+        taskBar.addEventListener('wheel', (evt) => {
+            if (evt.deltaY !== 0) {
+                evt.preventDefault();
+                taskBar.scrollLeft += evt.deltaY;
+            }
+        }, { passive: false });
+        
+        // Also enable drag to scroll for better UX
+        let isDown = false;
+        let startX;
+        let scrollLeft;
+
+        taskBar.addEventListener('mousedown', (e) => {
+            isDown = true;
+            taskBar.classList.add('active-drag');
+            startX = e.pageX - taskBar.offsetLeft;
+            scrollLeft = taskBar.scrollLeft;
+        });
+        taskBar.addEventListener('mouseleave', () => {
+            isDown = false;
+            taskBar.classList.remove('active-drag');
+        });
+        taskBar.addEventListener('mouseup', () => {
+            isDown = false;
+            taskBar.classList.remove('active-drag');
+        });
+        taskBar.addEventListener('mousemove', (e) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - taskBar.offsetLeft;
+            const walk = (x - startX) * 2;
+            taskBar.scrollLeft = scrollLeft - walk;
+        });
+    }
+
+    // Auto-refresh active chat session if RPA tasks are running
+    setInterval(async () => {
+        if (currentSection === 'jarvis' && currentJarvisSessionId) {
+            // Only refresh if there are active tasks
+            const taskRes = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
+            const taskData = await taskRes.json();
+            if (taskData.success && taskData.data.some(t => t.status === 'running' && t.parent_session_id === currentJarvisSessionId)) {
+                refreshActiveSession();
+            }
+        }
+    }, 3000);
+}
+
+async function refreshActiveSession() {
+    if (!currentJarvisSessionId) return;
+    try {
+        const response = await fetch(`${API_URL}/v1.0/jarvis/sessions/${currentJarvisSessionId}`);
+        const data = await response.json();
+        if (data.success) {
+            const newHistory = data.data.history || [];
+            
+            // Check if history length changed or last message content is different
+            if (newHistory.length !== jarvisHistory.length || 
+                (newHistory.length > 0 && JSON.stringify(newHistory[newHistory.length-1]) !== JSON.stringify(jarvisHistory[jarvisHistory.length-1]))) {
+                
+                const container = document.getElementById('jarvis-messages');
+                const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+                
+                jarvisHistory = newHistory;
+                container.innerHTML = '';
+                
+                if (jarvisHistory.length === 0) {
+                    addChatMessage('assistant', t('jarvis.welcome'));
+                } else {
+                    jarvisHistory.forEach(msg => {
+                        addChatMessage(msg.role, msg.content, msg.isStatusUpdate);
+                    });
+                }
+                
+                if (wasAtBottom) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Failed to refresh active session:', e);
+    }
+}
+
 // ===== Initialization =====
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
+    initJarvisUI();
 });
 
 async function initializeApp() {
@@ -242,6 +331,7 @@ function startStatusPolling() {
     
     const poll = async () => {
         try {
+            // 1. Browser Profiles Status
             const response = await fetch(`${API_URL}/v1.0/browser_profiles/running/list`);
             const data = await response.json();
             if (data.success && data.data && data.data.profiles) {
@@ -255,6 +345,28 @@ function startStatusPolling() {
                     runningProfiles = runningIds;
                     renderProfiles();
                 }
+
+                // Show/Hide Emergency Stop button based on activity
+                const stopBtn = document.getElementById('btn-emergency-stop');
+                if (stopBtn) {
+                    stopBtn.style.display = runningProfiles.size > 0 ? 'flex' : 'none';
+                }
+            }
+
+            // 2. Jarvis Tasks Status
+            const taskRes = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
+            const taskData = await taskRes.json();
+            if (taskData.success && taskData.data) {
+                const activeTasks = taskData.data.filter(t => t.status === 'running' || t.status === 'pending');
+                const stopBtn = document.getElementById('btn-emergency-stop');
+                if (stopBtn && activeTasks.length > 0) {
+                    stopBtn.style.display = 'flex';
+                }
+                
+                // Render mini-status in Jarvis section if active
+                if (currentSection === 'jarvis') {
+                    renderJarvisTaskStatus(taskData.data);
+                }
             }
         } catch (e) {
             console.error('Status polling error:', e);
@@ -266,6 +378,32 @@ function startStatusPolling() {
     
     // Poll Jarvis notifications
     setInterval(updateJarvisBadge, 10000);
+}
+
+// Emergency Stop
+async function emergencyStopAll() {
+    if (!confirm('🛑 EMERGENCY STOP: Stop all running tasks and close all browsers?')) return;
+    
+    showLoading('Stopping everything...', 'Sending kill signal to all processes...');
+    try {
+        const response = await fetch(`${API_URL}/v1.0/system/emergency-stop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showToast('All operations stopped', 'success');
+            runningProfiles.clear();
+            renderProfiles();
+            // Clear Jarvis history items if needed, or just let polling handle it
+            if (currentSection === 'jarvis') loadProfiles();
+        }
+    } catch (e) {
+        showToast('Stop failed: ' + e.message, 'error');
+    } finally {
+        hideLoading();
+    }
 }
 
 // ===== Jarvis Notifications =====
@@ -914,11 +1052,20 @@ function openChromeStoreModal() {
     document.getElementById('chrome-store-warning').style.display = 'none';
     document.getElementById('chrome-store-loader').style.display = 'none';
     document.getElementById('chrome-store-btn').disabled = false;
+    
+    // Populate group select
+    const groupSelect = document.getElementById('chrome-extension-group-input');
+    if (groupSelect) {
+        groupSelect.innerHTML = `<option value="">${t('common.allGroups') || 'All Groups'}</option>` +
+            allGroups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+    }
+    
     openModal('chrome-store-modal');
 }
 
 async function verifyChromeExtension() {
     const input = document.getElementById('chrome-store-url').value.trim();
+    const groupId = document.getElementById('chrome-extension-group-input').value;
     if (!input) return;
     
     // Extract ID from URL
@@ -949,7 +1096,10 @@ async function verifyChromeExtension() {
         const response = await fetch(`${API_URL}/v1.0/extensions/chrome-store/install`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ extensionId })
+            body: JSON.stringify({ 
+                extensionId,
+                group_id: groupId || null
+            })
         });
         
         const data = await response.json();
@@ -1317,16 +1467,16 @@ function renderGroups() {
 }
 
 function updateGroupSelects() {
-    const selects = document.querySelectorAll('#profile-group, #edit-group, #group-filter, #proxy-group, #bulk-proxy-group');
+    const selects = document.querySelectorAll('#profile-group, #edit-group, #group-filter, #proxy-group, #bulk-proxy-group, #extension-group-input, #bookmark-group-input, #chrome-extension-group-input');
     selects.forEach(select => {
         const currentValue = select.value;
         const isFilter = select.id === 'group-filter';
         
-        let html = isFilter ? `<option value="">${t('filter.allGroups')}</option>` : `<option value="">${t('common.noGroup')}</option>`;
+        let html = isFilter ? `<option value="">${t('filter.allGroups')}</option>` : `<option value="">${t('common.allGroups') || 'All Groups'}</option>`;
         html += allGroups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
         
         select.innerHTML = html;
-        select.value = currentValue;
+        if (currentValue) select.value = currentValue;
     });
 }
 
@@ -2351,6 +2501,37 @@ async function saveScenario() {
 }
 
 // ===== Modals =====
+function handleProfileGroupChange(modalType) {
+    const groupId = document.getElementById(modalType === 'edit' ? 'edit-group' : 'profile-group').value;
+    
+    // Auto-select extensions based on group
+    const extCheckboxes = document.querySelectorAll(`#${modalType}-modal input[name="profile-extension"]`);
+    extCheckboxes.forEach(cb => {
+        const ext = allExtensions.find(e => e.id === cb.value);
+        if (ext) {
+            // If extension belongs to this group OR it's a global extension (no group_id)
+            if (ext.group_id === groupId || !ext.group_id) {
+                cb.checked = true;
+            } else {
+                cb.checked = false;
+            }
+        }
+    });
+
+    // Auto-select bookmarks based on group
+    const bmCheckboxes = document.querySelectorAll(`#${modalType}-modal input[name="profile-bookmark"]`);
+    bmCheckboxes.forEach(cb => {
+        const bm = allBookmarks.find(b => b.id === cb.value);
+        if (bm) {
+            if (bm.group_id === groupId || !bm.group_id) {
+                cb.checked = true;
+            } else {
+                cb.checked = false;
+            }
+        }
+    });
+}
+
 function openCreateModal() {
     // Reset form
     document.getElementById('profile-name').value = '';
@@ -2363,6 +2544,15 @@ function openCreateModal() {
     
     // Set active tab to basic
     scrollToSection('create', 'basic');
+
+    // Populate groups
+    updateGroupSelects();
+    
+    // Add change listener for auto-selection
+    const groupSelect = document.getElementById('profile-group');
+    if (groupSelect) {
+        groupSelect.onchange = () => handleProfileGroupChange('create');
+    }
     
     // Load extensions and bookmarks for selection
     renderProfileTabLists('create');
@@ -2422,6 +2612,10 @@ async function openEditModal(id) {
     // Set active tab to basic
     scrollToSection('edit', 'basic');
 
+    // Add change listener for auto-selection
+    const groupSelect = document.getElementById('edit-group');
+    groupSelect.onchange = () => handleProfileGroupChange('edit');
+
     // Load extensions and bookmarks for selection
     await renderProfileTabLists('edit', id);
     
@@ -2439,6 +2633,7 @@ async function renderProfileTabLists(mode, profileId = null) {
     
     let assignedExtensions = new Set();
     let assignedBookmarks = new Set();
+    
     if (profileId) {
         try {
             const extRes = await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/extensions`);
@@ -2451,6 +2646,15 @@ async function renderProfileTabLists(mode, profileId = null) {
         } catch (e) {
             console.error('Failed to load profile assets:', e);
         }
+    } else if (mode === 'create') {
+        // Pre-select extensions and bookmarks that belong to the selected group (or all groups)
+        const groupId = document.getElementById('profile-group').value;
+        allExtensions.forEach(ext => {
+            if (ext.group_id === groupId || !ext.group_id) assignedExtensions.add(ext.id);
+        });
+        allBookmarks.forEach(bm => {
+            if (bm.group_id === groupId || !bm.group_id) assignedBookmarks.add(bm.id);
+        });
     }
     
     extList.innerHTML = allExtensions.length === 0 ? `<p class="text-muted">${t('extensions.none_available')}</p>` : allExtensions.map(ext => `
@@ -3262,12 +3466,21 @@ async function importBulkProxies() {
 function openAddExtensionModal() {
     document.getElementById('extension-name-input').value = '';
     document.getElementById('extension-path-input').value = '';
+    
+    // Populate group select
+    const groupSelect = document.getElementById('extension-group-input');
+    if (groupSelect) {
+        groupSelect.innerHTML = `<option value="">${t('common.allGroups') || 'All Groups'}</option>` +
+            allGroups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+    }
+    
     openModal('extension-modal');
 }
 
 async function saveExtensionRobust() {
     const name = document.getElementById('extension-name-input').value.trim();
     const path = document.getElementById('extension-path-input').value.trim();
+    const groupId = document.getElementById('extension-group-input').value;
     const resultsArea = document.getElementById('extension-modal-results');
     
     if (!name || !path) {
@@ -3279,10 +3492,10 @@ async function saveExtensionRobust() {
     showToast(t('msg.savingExtension'), 'info');
     
     try {
-        const response = await fetch(`${API_URL}/v1.0/extensions`, {
+        const response = await fetch(`${API_URL}/v1.0/extensions/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, path, is_default: true })
+            body: JSON.stringify({ name, path, group_id: groupId || null })
         });
         
         const data = await response.json();
@@ -3305,12 +3518,21 @@ async function saveExtensionRobust() {
 function openAddBookmarkModal() {
     document.getElementById('bookmark-name-input').value = '';
     document.getElementById('bookmark-url-input').value = '';
+    
+    // Populate group select
+    const groupSelect = document.getElementById('bookmark-group-input');
+    if (groupSelect) {
+        groupSelect.innerHTML = `<option value="">${t('common.allGroups') || 'All Groups'}</option>` +
+            allGroups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+    }
+    
     openModal('bookmark-modal');
 }
 
 async function saveBookmarkRobust() {
     const name = document.getElementById('bookmark-name-input').value.trim();
     const url = document.getElementById('bookmark-url-input').value.trim();
+    const groupId = document.getElementById('bookmark-group-input').value;
     const resultsArea = document.getElementById('bookmark-modal-results');
     
     if (!name || !url) {
@@ -3325,7 +3547,10 @@ async function saveBookmarkRobust() {
         const response = await fetch(`${API_URL}/v1.0/bookmarks/bulk`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bookmarks: [{ name, url }] })
+            body: JSON.stringify({ 
+                bookmarks: [{ name, url }],
+                group_id: groupId || null
+            })
         });
         
         const data = await response.json();
@@ -4197,10 +4422,25 @@ window.confirmJarvisAction = function(msgId, confirmed) {
     sendJarvisMessage("Confirmed. Proceed with the action.", { confirmed: true, isConfirmedAction: true });
 };
 
-function addChatMessage(role, content) {
+function addChatMessage(role, content, isStatusUpdate = false) {
     const container = document.getElementById('jarvis-messages');
-    const id = 'msg-' + Date.now();
+    const id = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     const msgDiv = document.createElement('div');
+    
+    if (isStatusUpdate) {
+        msgDiv.className = `message system-status`;
+        msgDiv.innerHTML = `
+            <div class="status-msg-inner">
+                <i data-lucide="activity" class="status-icon"></i>
+                <span class="status-text">${escapeHtml(content)}</span>
+            </div>
+        `;
+        container.appendChild(msgDiv);
+        lucide.createIcons();
+        container.scrollTop = container.scrollHeight;
+        return id;
+    }
+
     msgDiv.className = `message ${role}`;
     msgDiv.id = id;
     
@@ -4228,6 +4468,29 @@ function addChatMessage(role, content) {
 
     // Convert Markdown to HTML
     let formattedContent = content;
+    
+    // Handle JSON tool calls or scripts in messages (User or Assistant)
+    if (formattedContent.includes('{') && (formattedContent.includes('"action":') || formattedContent.includes('"tool":'))) {
+        // Try to find JSON blocks and wrap them in a spoiler
+        const jsonRegex = /({[\s\S]*?"action":[\s\S]*?}|\[[\s\S]*?{"step":[\s\S]*?\])/g;
+        formattedContent = formattedContent.replace(jsonRegex, (match) => {
+            try {
+                // Verify it's actually JSON
+                JSON.parse(match);
+                return `
+                    <div class="jarvis-system-log collapsed">
+                        <div class="jarvis-system-log-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                            <span><i data-lucide="code" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Action Data (JSON)</span>
+                            <i data-lucide="chevron-down" style="width:12px;height:12px;"></i>
+                        </div>
+                        <div class="jarvis-system-log-body">${escapeHtml(match)}</div>
+                    </div>
+                `;
+            } catch (e) {
+                return match;
+            }
+        });
+    }
     
     // Handle technical system logs formatting
     if (formattedContent.includes('[System] Tool executed successfully:') || formattedContent.includes('[System Error]')) {
