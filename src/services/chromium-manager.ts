@@ -753,8 +753,18 @@ $Shortcut.Save()
                 }).filter(u => u);
             }
 
-            console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
-            await Page.navigate({ url: ipCheckUrlWithId });
+            // Navigate to appropriate page based on proxy configuration
+            const hasProxy = info && info.proxyOptions && info.proxyOptions.proxy;
+            if (!hasProxy && info?.startUrls && info.startUrls.length > 0) {
+                // No proxy - navigate directly to start URL
+                console.log(`🌐 No proxy, navigating to: ${info.startUrls[0]}`);
+                await Page.navigate({ url: info.startUrls[0] });
+                info.startUrls = []; // Clear since we used it
+            } else {
+                // Has proxy - navigate to IP check page first
+                console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
+                await Page.navigate({ url: ipCheckUrlWithId });
+            }
 
             // Set up proxy authentication to avoid browser popups
             if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
@@ -1042,19 +1052,20 @@ $Shortcut.Save()
                 screenOrientation: { type: 'landscapePrimary', angle: 0 }
             });
 
-            // Ensure the IP check tab is focused
-            const targets = await Target.getTargets();
-            const ipCheckTarget = targets.targetInfos.find((t: any) => t.url.includes('ip-check.html'));
-            if (ipCheckTarget) {
-                await Target.activateTarget({ targetId: ipCheckTarget.targetId });
-            }
-
-            // Open start URLs immediately for profiles without proxy (no tunnel blocking)
-            const procInfo = this.runningProcesses.get(profileId);
-            if (procInfo && !procInfo.proxyOptions?.proxy && procInfo.startUrls && procInfo.startUrls.length > 0) {
-                console.log(`🌐 No proxy configured, opening ${procInfo.startUrls.length} start URLs`);
-                await this.openStartUrls(profileId, procInfo.startUrls);
-                procInfo.startUrls = [];
+            // Open start URLs for additional tabs (not the main one which we already navigated)
+            if (info && info.startUrls && info.startUrls.length > 1) {
+                for (let i = 1; i < info.startUrls.length; i++) {
+                    const url = info.startUrls[i];
+                    if (url && url.trim()) {
+                        try {
+                            await Target.createTarget({ url: url.trim() });
+                            console.log(`🌐 Opening additional start URL: ${url.trim()}`);
+                        } catch (e) {
+                            console.error('Failed to open additional tab:', e);
+                        }
+                    }
+                }
+                info.startUrls = [];
             }
 
             // DO NOT close client here, it will be closed in terminateProfile or on exit
