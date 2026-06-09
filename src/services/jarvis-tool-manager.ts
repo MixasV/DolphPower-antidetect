@@ -75,6 +75,11 @@ export class JarvisToolManager {
 
                 case 'getProfile':
                     const profile = await this.profileManager.getProfileWithFingerprint(args.id);
+                    if (profile) {
+                        // Add real-time running status
+                        const isRunning = this.chromiumManager.isProfileRunning(args.id);
+                        return { success: true, data: { ...profile, is_running: isRunning } };
+                    }
                     return { success: true, data: profile };
 
                 case 'startProfile':
@@ -100,10 +105,20 @@ export class JarvisToolManager {
                     // Apply fingerprint after launch
                     const port = this.chromiumManager.getDevToolsPort(pData.profile.id);
                     if (port) {
-                        await this.chromiumManager.applyFingerprintViaCDP(pData.profile.id, port, pData.fingerprint);
+                        const startUrls = pData.profile.start_urls ? pData.profile.start_urls.split('\n').filter((u: string) => u.trim()) : [];
+                        await this.chromiumManager.applyFingerprintViaCDP(pData.profile.id, port, pData.fingerprint, startUrls);
                     }
                     
-                    return { success: true, data: { action: 'start', id: args.id } };
+                    // Check if browser actually launched
+                    await new Promise(r => setTimeout(r, 1000));
+                    const actuallyRunning = this.chromiumManager.isProfileRunning(args.id);
+                    
+                    return { success: true, data: { 
+                        action: 'start', 
+                        id: args.id,
+                        is_running: actuallyRunning,
+                        message: actuallyRunning ? 'Profile started successfully' : 'Profile launch initiated but verification pending'
+                    } };
 
                 case 'stopProfile':
                     await this.chromiumManager.terminateProfile(args.id);

@@ -567,12 +567,18 @@ $Shortcut.Save()
     async unlockProfile(profileId: string): Promise<void> {
         this.proxyTunnelManager.unlockTunnel(profileId);
         
-        // Open deferred start URLs
+        // Open deferred start URLs after delay to ensure page is stable
         const info = this.runningProcesses.get(profileId);
         if (info && info.startUrls && info.startUrls.length > 0) {
             console.log(`🌐 Proxy verified for ${profileId}, opening ${info.startUrls.length} start URLs`);
-            await this.openStartUrls(profileId, info.startUrls);
-            info.startUrls = []; // Clear so they don't open again
+            const urls = [...info.startUrls];
+            setTimeout(async () => {
+                try {
+                    await this.openStartUrls(profileId, urls);
+                } catch (e) {
+                    console.error('Failed to open start URLs on unlock:', e);
+                }
+            }, 500);
         }
     }
 
@@ -753,18 +759,9 @@ $Shortcut.Save()
                 }).filter(u => u);
             }
 
-            // Navigate to appropriate page based on proxy configuration
-            const hasProxy = info && info.proxyOptions && info.proxyOptions.proxy;
-            if (!hasProxy && info?.startUrls && info.startUrls.length > 0) {
-                // No proxy - navigate directly to start URL
-                console.log(`🌐 No proxy, navigating to: ${info.startUrls[0]}`);
-                await Page.navigate({ url: info.startUrls[0] });
-                info.startUrls = []; // Clear since we used it
-            } else {
-                // Has proxy - navigate to IP check page first
-                console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
-                await Page.navigate({ url: ipCheckUrlWithId });
-            }
+            // Always navigate to IP check first
+            console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
+            await Page.navigate({ url: ipCheckUrlWithId });
 
             // Set up proxy authentication to avoid browser popups
             if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
