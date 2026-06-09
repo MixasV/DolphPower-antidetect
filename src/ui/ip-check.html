@@ -140,6 +140,17 @@
                                 })
                             });
                             await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/unlock`, { method: 'POST' });
+                            // For profiles without proxy - navigate to start_url after unlock
+                            if (!hasProxy) {
+                                const profileRes2 = await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}`);
+                                const profileData2 = await profileRes2.json();
+                                const startUrls = profileData2.data?.profile?.start_urls?.split('\n')?.filter(u => u.trim());
+                                if (startUrls && startUrls.length > 0) {
+                                    setTimeout(() => {
+                                        window.location.href = startUrls[0];
+                                    }, 1000);
+                                }
+                            }
                         } catch (e) {
                             console.error('Failed to update IP or unlock:', e);
                         }
