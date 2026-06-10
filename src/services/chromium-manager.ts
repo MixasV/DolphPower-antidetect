@@ -420,13 +420,10 @@ $Shortcut.Save()
         const browserProcess = spawn(chromiumPath, args, {
             detached: true,
             stdio: 'ignore',
-            windowsHide: false, // Changed to false to ensure window is visible
+            windowsHide: false,
             env: {
                 ...process.env,
-                // Windows app user model for custom taskbar icon
-                ...(os.platform() === 'win32' ? {
-                    APPIMAGE: iconPath  // Some systems use this for icon
-                } : {})
+                ...(os.platform() === 'win32' && iconPath ? { APPDATA: path.dirname(iconPath) } : {})
             }
         });
 

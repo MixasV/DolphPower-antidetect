@@ -1925,7 +1925,7 @@ export function createApp(db: Database): Express {
                 try {
                     // Find JSON block
                     const jsonMatch = response.match(/\{[\s\S]*"action":\s*"callTool"[\s\S]*\}/);
-                    if (jsonMatch) {
+                    if (jsonMatch && jsonMatch[0]) {
                         const toolCall = JSON.parse(jsonMatch[0]);
                         
                         // Merge external confirmation into tool args (only for the first iteration or if specifically passed)

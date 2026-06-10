@@ -100,6 +100,38 @@ async function createWindow() {
         mainWindow.loadFile(path.join(__dirname, '../ui/index.html'));
     }
 
+    // Prevent closing if profiles are running
+    mainWindow.on('close', async (event: any) => {
+        try {
+            const runningRes = await axios.get(`http://127.0.0.1:${API_PORT}/v1.0/browser_profiles/running/list`);
+            const runningProfiles = runningRes.data.data?.profiles || [];
+            if (runningProfiles.length > 0) {
+                const shouldQuit = await dialog.showMessageBox(mainWindow!, {
+                    type: 'warning',
+                    title: 'Running Profiles',
+                    message: `${runningProfiles.length} profile(s) are still running. Do you want to close them and exit?`,
+                    buttons: ['Cancel', 'Close Profiles & Exit'],
+                    defaultId: 0,
+                    cancelId: 0
+                });
+                if (shouldQuit.response === 0) {
+                    event.preventDefault();
+                    return;
+                }
+                // Terminate all running profiles
+                for (const p of runningProfiles) {
+                    try {
+                        await axios.get(`http://127.0.0.1:${API_PORT}/v1.0/browser_profiles/${p.profileId}/stop`);
+                    } catch (e) {}
+                }
+                setTimeout(() => mainWindow?.destroy(), 500);
+                event.preventDefault();
+            }
+        } catch (e) {
+            // If API not available, allow close
+        }
+    });
+
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
