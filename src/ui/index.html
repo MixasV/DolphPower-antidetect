@@ -77,7 +77,7 @@
                 <div class="theme-toggle" onclick="logout()" title="Logout and Lock">
                     <i data-lucide="log-out" style="width: 18px; height: 18px; color: var(--danger);"></i>
                 </div>
-                <div class="version">v0.5.0</div>
+                <div class="version">v0.6.0</div>
             </div>
         </aside>
 
@@ -217,22 +217,23 @@
                     </div>
                 </div>
                 <div class="table-container">
-                    <table class="data-table" id="proxies-table">
-                        <thead>
-                            <tr>
-                                <th class="th-checkbox"><input type="checkbox" onchange="toggleSelectAllProxies(this.checked)"></th>
-                                <th data-i18n="table.name">Name</th>
-                                <th data-i18n="table.type">Type</th>
-                                <th data-i18n="table.host">Host</th>
-                                <th data-i18n="table.port">Port</th>
-                                <th data-i18n="table.country">Country</th>
-                                <th data-i18n="form.group">Group</th>
-                                <th data-i18n="table.status">Status</th>
-                                <th data-i18n="table.actions">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="proxies-tbody"></tbody>
-                    </table>
+                     <table class="data-table" id="proxies-table">
+                         <thead>
+                             <tr>
+                                 <th class="th-checkbox"><input type="checkbox" onchange="toggleSelectAllProxies(this.checked)"></th>
+                                 <th data-i18n="table.name">Name</th>
+                                 <th data-i18n="table.type">Type</th>
+                                 <th data-i18n="table.host">Host</th>
+                                 <th data-i18n="table.port">Port</th>
+                                 <th data-i18n="table.country">Country</th>
+                                 <th data-i18n="form.group">Group</th>
+                                 <th data-i18n="table.usage">Usage</th>
+                                 <th data-i18n="table.status">Status</th>
+                                 <th data-i18n="table.actions">Actions</th>
+                             </tr>
+                         </thead>
+                         <tbody id="proxies-tbody"></tbody>
+                     </table>
                 </div>
             </section>
 
@@ -2051,68 +2052,6 @@
                     </label>
                 </div>
                 
-                <div class="divider"></div>
-                <h3 style="margin-bottom: 15px; font-size: 14px; display: flex; align-items: center; gap: 8px;">
-                    <i data-lucide="send" style="width: 16px; height: 16px; color: #0088cc;"></i>
-                    <span data-i18n="jarvis.tgTitle">Telegram Notifications</span>
-                </h3>
-                <div class="form-group">
-                    <label data-i18n="jarvis.tgToken">Bot Token</label>
-                    <input type="password" id="jarvis-tg-token" placeholder="123456:ABC-DEF...">
-                </div>
-                <div class="form-group">
-                    <label data-i18n="jarvis.tgChatId">Chat ID</label>
-                    <input type="text" id="jarvis-tg-chat-id" placeholder="123456789">
-                    <p class="help-text" style="font-size: 11px; margin-top: 4px;">
-                        <i data-lucide="info" style="width: 10px; height: 10px; vertical-align: middle;"></i>
-                        Send <code>/start</code> to your bot in Telegram first, otherwise it cannot send you messages.
-                    </p>
-                </div>
-                <div class="form-group">
-                    <label data-i18n="jarvis.tgWhitelist">White-list IDs (comma separated)</label>
-                    <input type="text" id="jarvis-tg-whitelist" placeholder="-101234843, 2344769...">
-                    <div id="tg-whitelist-warning" style="display: none; align-items: center; gap: 8px; color: var(--warning); font-size: 11px; margin-top: 5px;">
-                        <i data-lucide="alert-triangle" style="width: 12px; height: 12px;"></i>
-                        <span>Warning: Whitelist is empty. The bot will respond to ANY user.</span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label data-i18n="jarvis.tgMode">Mode</label>
-                    <select id="jarvis-tg-mode" onchange="toggleTgSecurityFields()">
-                        <option value="notify">Notifications Only</option>
-                        <option value="full">Full Remote Control</option>
-                    </select>
-                </div>
-                <div id="tg-security-fields" style="display: none; padding: 15px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 15px;">
-                    <div class="form-group">
-                        <label data-i18n="jarvis.tgSafeTools">Safe Tools (Auto-approved)</label>
-                        <div id="tg-tools-list" class="profile-tab-list" style="max-height: 120px;"></div>
-                    </div>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="jarvis-tg-requires-2fa" checked>
-                        <span data-i18n="jarvis.tgRequires2fa">Require 2FA PIN for sensitive actions</span>
-                    </label>
-                </div>
-                <div class="form-row" style="gap: 20px;">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="jarvis-tg-notify-success" checked>
-                        <span data-i18n="jarvis.tgSuccess">Success</span>
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="jarvis-tg-notify-error" checked>
-                        <span data-i18n="jarvis.tgError">Errors</span>
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="jarvis-tg-notify-summary" checked>
-                        <span data-i18n="jarvis.tgSummary">Summary</span>
-                    </label>
-                </div>
-                <div style="margin-top: 10px;">
-                    <button class="btn btn-secondary btn-sm" onclick="testJarvisTelegram()">
-                        <i data-lucide="send"></i> <span data-i18n="jarvis.tgTest">Test Bot</span>
-                    </button>
-                </div>
-
                 <div class="divider"></div>
                 <div class="form-group">
                     <label data-i18n="jarvis.webhookUrl">Zapier / Make Webhook URL</label>

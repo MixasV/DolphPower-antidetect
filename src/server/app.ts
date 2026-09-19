@@ -1,4 +1,4 @@
-import express, { Express, Request, Response, NextFunction } from 'express';
+﻿import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,7 +21,6 @@ import { JarvisController } from '../services/jarvis-controller';
 import { EncryptionService } from '../services/encryption-service';
 import { JarvisTaskManager } from '../services/jarvis-task-manager';
 import { JarvisToolManager } from '../services/jarvis-tool-manager';
-import { TelegramService } from '../services/telegram-service';
 import { AuthService } from '../services/auth-service';
 import { DataMigrationService } from '../services/data-migration-service';
 import { SecurityService } from '../services/security-service';
@@ -48,16 +47,14 @@ export function createApp(db: Database): Express {
     const jarvisController = new JarvisController(chromiumManager, jarvisService);
     const rpaEngine = new RPAEngine(db, jarvisService, extensionManager);
     const jarvisTaskManager = new JarvisTaskManager(db, chromiumManager, rpaEngine, profileManager);
-    const telegramService = new TelegramService();
     let jarvisToolManager: JarvisToolManager | null = null;
 
-    // Helper to refresh Jarvis & Telegram configuration from DB
+    // Helper to refresh Jarvis configuration from DB
     const refreshJarvisServices = async () => {
         return new Promise<void>((resolve) => {
             db.get('SELECT * FROM jarvis_config WHERE id = 1', (err, row: any) => {
                 if (row) {
                     jarvisService.setConfig(row);
-                    telegramService.updateConfig(row);
                     
                     jarvisToolManager = new JarvisToolManager(
                         db, 
@@ -71,58 +68,6 @@ export function createApp(db: Database): Express {
                         jarvisController,
                         jarvisService.getMCPManager()
                     );
-
-                    // Set up Telegram command handler
-                    telegramService.setCommandHandler(async (message, chatId) => {
-                        console.log(`[Telegram] Command from ${chatId}: ${message}`);
-                        
-                        // 1. Check if it's a PIN for a pending action
-                        const pinMatch = message.match(/^\d{6}$/);
-                        if (pinMatch) {
-                            const pending = securityService.getPendingActionByPin(message);
-                            if (pending && pending.chatId === chatId) {
-                                const result = await jarvisToolManager?.executeTool(pending.action, { ...pending.args, confirmed: true }, 'telegram');
-                                securityService.resolveAction(pending.id);
-                                if (result?.success) {
-                                    return `✅ <b>Confirmed!</b> Action executed successfully.\n\nResult: <code>${JSON.stringify(result.data, null, 2)}</code>`;
-                                } else {
-                                    return `❌ <b>Failed:</b> ${result?.error}`;
-                                }
-                            }
-                        }
-
-                        // 2. Standard Jarvis processing
-                        const response = await jarvisService.askJarvis(message, [], [], undefined, 'telegram');
-                        let finalResponse = response;
-
-                        // Handle tool calls from Telegram
-                        if (response.includes('"action": "callTool"') && jarvisToolManager) {
-                            try {
-                                const jsonMatch = response.match(/\{[\s\S]*"action":\s*"callTool"[\s\S]*\}/);
-                                if (jsonMatch) {
-                                    const toolCall = JSON.parse(jsonMatch[0]);
-                                    
-                                    // Check tool against whitelist and 2FA requirement
-                                    const result = await jarvisToolManager.executeTool(toolCall.tool, toolCall.args, 'telegram');
-                                    
-                                    if (result.requiresConfirmation) {
-                                        const pending = securityService.createPendingAction(toolCall.tool, chatId, toolCall.args);
-                                        return `${response}\n\n⚠️ <b>SECURITY CONFIRMATION REQUIRED</b>\nTo execute this action, please enter this PIN in the chat:\n\n<code>${pending.pin}</code>\n\n(Expires in 5 minutes)`;
-                                    }
-
-                                    if (result.success) {
-                                        finalResponse = `${response}\n\n✅ <b>Result:</b> ${JSON.stringify(result.data, null, 2)}`;
-                                    } else {
-                                        finalResponse = `${response}\n\n❌ <b>Error:</b> ${result.error}`;
-                                    }
-                                }
-                            } catch (e: any) {
-                                finalResponse = `${response}\n\n⚠️ Tool parsing error: ${e.message}`;
-                            }
-                        }
-
-                        return finalResponse;
-                    });
                 }
                 resolve();
             });
@@ -153,9 +98,8 @@ export function createApp(db: Database): Express {
     app.use('/ui', express.static(uiPath));
     console.log(`📁 Serving UI from: ${uiPath}`);
 
-    // Request logging
+    // Request logging (only errors, not every request)
     app.use((req: Request, res: Response, next: NextFunction) => {
-        console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
         next();
     });
 
@@ -242,9 +186,6 @@ export function createApp(db: Database): Express {
         if (result.success) {
             // Refresh services with the provided master key
             await refreshJarvisServices();
-            
-            // Ensure data is up to date with the latest key (handles transitions)
-            await migrationService.reencryptAllData().catch(e => console.error('Migration on login failed:', e));
             res.json({ success: true });
         } else {
             res.status(401).json({ success: false, error: result.error });
@@ -366,10 +307,11 @@ export function createApp(db: Database): Express {
             status,
             start_urls,
             launch_args,
-            fingerprint_config,
-        } = req.body;
+             fingerprint_config,
+             extension_ids,
+         } = req.body;
 
-        if (!name) {
+         if (!name) {
             res.status(400).json({ error: 'name is required' });
             return;
         }
@@ -391,6 +333,7 @@ export function createApp(db: Database): Express {
             startUrls: start_urls,
             launchArgs: launch_args,
             fingerprintConfig: fingerprint_config,
+            extensionIds: extension_ids,
         });
 
         res.json({
@@ -809,6 +752,16 @@ export function createApp(db: Database): Express {
                     fingerprintDataToApply.languages.languages = [locale, locale.split('-')[0], 'en-US', 'en'];
                     fingerprintDataToApply.languages.acceptLanguage = `${locale},${locale.split('-')[0]};q=0.9,en-US;q=0.8,en;q=0.7`;
                     
+                    // 2. Sync Timezone
+                    if (result.info.timezone) {
+                        const timezoneId = result.info.timezone;
+                        const offsetMinutes = chromiumManager.getOffsetMinutesForTimezone(timezoneId) || 0;
+                        fingerprintDataToApply.timezone = {
+                            id: timezoneId,
+                            offset: offsetMinutes
+                        };
+                    }
+                    
                     // 3. Sync Geolocation
                     if (result.info.lat && result.info.lon) {
                         fingerprintDataToApply.geolocation = {
@@ -858,14 +811,20 @@ export function createApp(db: Database): Express {
             }
         );
 
-        // Wait a bit for browser to start
-        await new Promise(resolve => setTimeout(resolve, 1500));
+// Wait a bit for browser to start
+         await new Promise(resolve => setTimeout(resolve, 1500));
 
-        try {
-            const startUrls = profile.start_urls ? profile.start_urls.split('\n').filter((u: string) => u.trim()) : [];
-            await chromiumManager.applyFingerprintViaCDP(req.params.id, processInfo.devToolsPort, fingerprintDataToApply, startUrls, {
-                restoreTabs: profile.restore_tabs === 1
-            });
+         try {
+             const startUrls = profile.start_urls ? profile.start_urls.split('\n').filter((u: string) => u.trim()) : [];
+             
+// Get fingerprint adjusted for proxy (context-specific)
+              const fpToUse = await chromiumManager.getContextFingerprint(req.params.id, processInfo.contextId!)
+                  ?? fingerprintDataToApply;
+             
+         await chromiumManager.applyFingerprintViaCDP(req.params.id, processInfo.devToolsPort, fpToUse, startUrls, {
+     restoreTabs: profile.restore_tabs === 1,
+     contextId: processInfo.contextId
+ });
             
             // Auto-inject Jarvis Overlay for Master Profile
             const config: any = await new Promise((resolve) => {
@@ -1561,7 +1520,7 @@ export function createApp(db: Database): Express {
         const proxies = await new Promise<any[]>((resolve, reject) => {
             db.all(`
                 SELECT p.*, 
-                    (SELECT COUNT(*) FROM profiles WHERE proxy_id = p.id) as usage_count
+                    (SELECT COUNT(*) FROM profiles WHERE proxy_id = p.id AND deleted_at IS NULL) as usage_count
                 FROM proxies p 
                 WHERE p.group_id = ? 
                 ORDER BY usage_count ASC, p.created_at DESC
@@ -1762,9 +1721,6 @@ export function createApp(db: Database): Express {
         if (config) {
             // Mask sensitive fields
             if (config.api_key) config.api_key = '********';
-            if (config.tg_token) config.tg_token = '********';
-            if (config.tg_chat_id) config.tg_chat_id = '********';
-            // tg_whitelist is usually fine to show as it's just IDs, but it was decrypted in UI anyway
         }
         
         res.json({ success: true, data: config || {} });
@@ -1774,39 +1730,30 @@ export function createApp(db: Database): Express {
      * Update Jarvis Configuration
      */
     app.post('/v1.0/jarvis/config', asyncHandler(async (req: Request, res: Response) => {
-        const { 
+        const {
             provider, api_url, api_key, model_name, master_profile_id, permission_level, system_prompt, is_enabled,
-            tg_token, tg_chat_id, tg_whitelist, tg_notify_success, tg_notify_error, tg_notify_summary,
-            tg_mode, mcp_servers, tg_safe_tools, tg_requires_2fa
+            mcp_servers
         } = req.body;
-        
-        // Encrypt API key and TG tokens if provided. 
-        // If undefined, '********' or empty (and we have an old value), we keep old value.
-        // If null, we clear it.
+
         const encryptIfProvided = (val: any, oldVal: string | null | undefined) => {
             if (val === undefined || val === '********' || (val === '' && oldVal)) return oldVal;
             if (val === null || val === '') return null;
             return EncryptionService.encrypt(val);
         };
 
-        // Get current config to handle partial updates properly
         const currentConfig: any = await new Promise((resolve) => {
             db.get('SELECT * FROM jarvis_config WHERE id = 1', (err, row) => resolve(row));
         });
 
         const encryptedKey = encryptIfProvided(api_key, currentConfig?.api_key);
-        const encryptedTgToken = encryptIfProvided(tg_token, currentConfig?.tg_token);
-        const encryptedTgChatId = encryptIfProvided(tg_chat_id, currentConfig?.tg_chat_id);
-        const encryptedTgWhitelist = encryptIfProvided(tg_whitelist, currentConfig?.tg_whitelist);
-        
+
         await new Promise<void>((resolve, reject) => {
             db.run(`
                 INSERT INTO jarvis_config (
-                    id, provider, api_url, api_key, model_name, master_profile_id, permission_level, system_prompt, is_enabled, 
-                    tg_token, tg_chat_id, tg_whitelist, tg_notify_success, tg_notify_error, tg_notify_summary,
-                    tg_mode, mcp_servers, tg_safe_tools, tg_requires_2fa, updated_at
+                    id, provider, api_url, api_key, model_name, master_profile_id, permission_level, system_prompt, is_enabled,
+                    mcp_servers, updated_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     provider = excluded.provider,
                     api_url = excluded.api_url,
@@ -1816,16 +1763,7 @@ export function createApp(db: Database): Express {
                     permission_level = excluded.permission_level,
                     system_prompt = excluded.system_prompt,
                     is_enabled = excluded.is_enabled,
-                    tg_token = excluded.tg_token,
-                    tg_chat_id = excluded.tg_chat_id,
-                    tg_whitelist = excluded.tg_whitelist,
-                    tg_notify_success = excluded.tg_notify_success,
-                    tg_notify_error = excluded.tg_notify_error,
-                    tg_notify_summary = excluded.tg_notify_summary,
-                    tg_mode = excluded.tg_mode,
                     mcp_servers = excluded.mcp_servers,
-                    tg_safe_tools = excluded.tg_safe_tools,
-                    tg_requires_2fa = excluded.tg_requires_2fa,
                     updated_at = excluded.updated_at
             `, [
                 provider || 'openai',
@@ -1836,16 +1774,7 @@ export function createApp(db: Database): Express {
                 permission_level || 'standard',
                 system_prompt,
                 is_enabled ? 1 : 0,
-                encryptedTgToken,
-                encryptedTgChatId,
-                encryptedTgWhitelist,
-                tg_notify_success === undefined ? (currentConfig?.tg_notify_success ?? 1) : (tg_notify_success ? 1 : 0),
-                tg_notify_error === undefined ? (currentConfig?.tg_notify_error ?? 1) : (tg_notify_error ? 1 : 0),
-                tg_notify_summary === undefined ? (currentConfig?.tg_notify_summary ?? 1) : (tg_notify_summary ? 1 : 0),
-                tg_mode || 'notify',
                 mcp_servers || '[]',
-                tg_safe_tools || '[]',
-                tg_requires_2fa === undefined ? (currentConfig?.tg_requires_2fa ?? 1) : (tg_requires_2fa ? 1 : 0),
                 Date.now()
             ], (err) => err ? reject(err) : resolve());
         });
@@ -1856,7 +1785,6 @@ export function createApp(db: Database): Express {
         });
         if (newConfig) {
             await jarvisService.setConfig(newConfig);
-            telegramService.updateConfig(newConfig);
             jarvisToolManager = new JarvisToolManager(
                 db, 
                 newConfig, 
@@ -2316,43 +2244,7 @@ export function createApp(db: Database): Express {
         });
     });
 
-    /**
-     * Test Telegram Notification
-     */
-    app.post('/v1.0/jarvis/tg-test', asyncHandler(async (req: Request, res: Response) => {
-        const { token, chatId } = req.body;
-        
-        // If values are masked, use the saved ones from telegramService
-        const useToken = (token && token !== '********') ? token : undefined;
-        const useChatId = (chatId && chatId !== '********') ? chatId : undefined;
-        
-        let success = false;
-        if (useToken && useChatId) {
-            // Test with provided (unsaved) credentials
-            try {
-                await axios.post(`https://api.telegram.org/bot${useToken}/sendMessage`, {
-                    chat_id: useChatId,
-                    text: '🔔 <b>Test Notification</b> from DolfPower (Unsaved Config).\n\nIf you see this, your credentials are correct!',
-                    parse_mode: 'HTML'
-                });
-                success = true;
-            } catch (e: any) {
-                return res.status(500).json({ 
-                    success: false, 
-                    error: `Telegram Error: ${e.response?.data?.description || e.message}. Make sure you started the bot with /start command.` 
-                });
-            }
-        } else {
-            // Test with saved config
-            success = await telegramService.sendMessage('🔔 <b>Test Notification</b> from DolfPower.\n\nTelegram setup was successful!');
-        }
-        
-        if (success) {
-            res.json({ success: true });
-        } else {
-            res.status(500).json({ success: false, error: 'Failed to send message. Check bot token and chat ID. Also ensure you have sent /start to the bot.' });
-        }
-    }));
+
 
     // Global error handler
     app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

@@ -1,4 +1,4 @@
-import { Database } from 'sqlite3';
+﻿import { Database } from 'sqlite3';
 import { EncryptionService } from './encryption-service';
 
 export class DataMigrationService {
@@ -108,13 +108,13 @@ export class DataMigrationService {
 
     private async reencryptJarvisConfig() {
         const row: any = await new Promise((res) => {
-            this.db.get('SELECT api_key, tg_token, tg_chat_id, tg_whitelist FROM jarvis_config WHERE id = 1', (err, row) => res(row));
+            this.db.get('SELECT api_key FROM jarvis_config WHERE id = 1', (err, row) => res(row));
         });
 
         if (!row) return;
 
         const updates: any = {};
-        const fields = ['api_key', 'tg_token', 'tg_chat_id', 'tg_whitelist'];
+        const fields = ['api_key'];
 
         for (const field of fields) {
             if (row[field]) {

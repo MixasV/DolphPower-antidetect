@@ -66,26 +66,26 @@ export class ProxyManager {
         });
     }
 
-    async listProxies(): Promise<Proxy[]> {
-        return new Promise((resolve, reject) => {
-            this.db.all(
-                'SELECT * FROM proxies ORDER BY created_at DESC',
-                (err, rows) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        const proxies = (rows || []).map((row: any) => {
-                            if (row.password) {
-                                row.password = EncryptionService.decrypt(row.password);
-                            }
-                            return row as Proxy;
-                        });
-                        resolve(proxies);
-                    }
-                }
-            );
-        });
-    }
+     async listProxies(): Promise<Proxy[]> {
+         return new Promise((resolve, reject) => {
+             this.db.all(
+                 `SELECT p.*, (SELECT COUNT(*) FROM profiles WHERE proxy_id = p.id AND deleted_at IS NULL) as usage_count FROM proxies p ORDER BY usage_count ASC, created_at DESC`,
+                 (err, rows) => {
+                     if (err) {
+                         reject(err);
+                     } else {
+                         const proxies = (rows || []).map((row: any) => {
+                             if (row.password) {
+                                 row.password = EncryptionService.decrypt(row.password);
+                             }
+                             return row as Proxy;
+                         });
+                         resolve(proxies);
+                     }
+                 }
+             );
+         });
+     }
 
     async deleteProxy(id: string): Promise<void> {
         return new Promise((resolve, reject) => {
@@ -149,7 +149,7 @@ export class ProxyManager {
      * - protocol://username:password@host:port
      */
     private parseProxyString(proxyStr: string): {
-        protocol: 'http' | 'https' | 'socks5';
+        protocol: 'http' | 'https' | 'socks5' | null;
         host: string;
         port: number;
         username?: string;
@@ -158,8 +158,7 @@ export class ProxyManager {
         try {
             proxyStr = proxyStr.trim();
 
-            // Default protocol
-            let protocol: 'http' | 'https' | 'socks5' = 'http';
+            let protocol: 'http' | 'https' | 'socks5' | null = null;
             let host: string;
             let port: number;
             let username: string | undefined;

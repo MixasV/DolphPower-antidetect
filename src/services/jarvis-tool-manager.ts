@@ -1,4 +1,4 @@
-import { Database } from 'sqlite3';
+﻿import { Database } from 'sqlite3';
 import { ProfileManager } from './profile-manager';
 import { ProxyManager } from './proxy-manager';
 import { ChromiumManager } from './chromium-manager';
@@ -32,26 +32,9 @@ export class JarvisToolManager {
         private mcpManager?: MCPManager
     ) {}
 
-    async executeTool(toolName: string, args: any, source: 'ui' | 'telegram' = 'ui', sessionId?: string): Promise<ToolResult> {
+    async executeTool(toolName: string, args: any, sessionId?: string): Promise<ToolResult> {
         const permission = this.config.permission_level || 'standard';
         const isConfirmed = args.confirmed === true;
-
-        // Security: Telegram Sandbox
-        if (source === 'telegram') {
-            const safeTools = this.config.tg_safe_tools ? JSON.parse(this.config.tg_safe_tools) : ['listProfiles', 'listProxies', 'getProfile', 'startProfile', 'stopProfile', 'listGroups', 'stopAll', 'stopAllTasks'];
-            if (!safeTools.includes(toolName)) {
-                return { success: false, error: `Tool '${toolName}' is not allowed via Telegram for security reasons.` };
-            }
-
-            // Always require confirmation for "active" tools via Telegram if configured
-            if (this.config.tg_requires_2fa === 1 && toolName.match(/start|stop|run|create|update/i) && !isConfirmed) {
-                return { 
-                    success: false, 
-                    error: `Action '${toolName}' requires manual confirmation in the browser or via 2FA.`,
-                    requiresConfirmation: true 
-                };
-            }
-        }
 
         // Check permissions for write/delete actions
         if (permission === 'readonly' && toolName.match(/create|delete|update|start|stop|run/i)) {
@@ -82,32 +65,38 @@ export class JarvisToolManager {
                     }
                     return { success: true, data: profile };
 
-                case 'startProfile':
-                    const pData = await this.profileManager.getProfileWithFingerprint(args.id);
-                    if (!pData) return { success: false, error: 'Profile not found' };
-                    
-                    const launchOptions: any = {};
-                    if (pData.profile.proxy_id) {
-                        const proxy = await this.proxyManager.getProxy(pData.profile.proxy_id);
-                        if (proxy) {
-                            launchOptions.proxy = `${proxy.host}:${proxy.port}`;
-                            if (proxy.username) {
-                                launchOptions.proxyAuth = {
-                                    username: proxy.username,
-                                    password: proxy.password
-                                };
-                            }
-                        }
-                    }
+case 'startProfile':
+                     const pData = await this.profileManager.getProfileWithFingerprint(args.id);
+                     if (!pData) return { success: false, error: 'Profile not found' };
+                     
+                     const launchOptions: any = {
+                         restoreTabs: pData.profile.restore_tabs === 1
+                     };
+                     if (pData.profile.proxy_id) {
+                         const proxy = await this.proxyManager.getProxy(pData.profile.proxy_id);
+                         if (proxy) {
+                             launchOptions.proxy = `${proxy.host}:${proxy.port}`;
+                             if (proxy.username) {
+                                 launchOptions.proxyAuth = {
+                                     username: proxy.username,
+                                     password: proxy.password
+                                 };
+                             }
+                         }
+                     }
 
-                    await this.chromiumManager.launchProfile(pData.profile.id, pData.profile.user_data_dir, launchOptions);
-                    
-                    // Apply fingerprint after launch
-                    const port = this.chromiumManager.getDevToolsPort(pData.profile.id);
-                    if (port) {
-                        const startUrls = pData.profile.start_urls ? pData.profile.start_urls.split('\n').filter((u: string) => u.trim()) : [];
-                        await this.chromiumManager.applyFingerprintViaCDP(pData.profile.id, port, pData.fingerprint, startUrls);
-                    }
+const launchInfo = await this.chromiumManager.launchProfile(pData.profile.id, pData.profile.user_data_dir, launchOptions);
+                      
+// Get fingerprint adjusted for proxy (context-specific)
+                       const fpToUse = await this.chromiumManager.getContextFingerprint(pData.profile.id, launchInfo.contextId!)
+                           ?? pData.fingerprint;
+                      
+                      // Apply fingerprint after launch
+                      const port = this.chromiumManager.getDevToolsPort(pData.profile.id);
+if (port) {
+                           const startUrls = pData.profile.start_urls ? pData.profile.start_urls.split('\n').filter((u: string) => u.trim()) : [];
+                           await this.chromiumManager.applyFingerprintViaCDP(pData.profile.id, port, fpToUse, startUrls, { restoreTabs: launchOptions.restoreTabs, contextId: launchInfo.contextId! });
+                       }
                     
                     // Check if browser actually launched
                     await new Promise(r => setTimeout(r, 1000));
@@ -280,11 +269,6 @@ export class JarvisToolManager {
                 case 'updateConfig':
                     // Map AI args to DB columns
                     const configUpdates: any = {};
-                    if (args.tgToken) configUpdates.tg_token = EncryptionService.encrypt(args.tgToken);
-                    if (args.tgChatId) configUpdates.tg_chat_id = EncryptionService.encrypt(args.tgChatId);
-                    if (args.tgNotifySuccess !== undefined) configUpdates.tg_notify_success = args.tgNotifySuccess ? 1 : 0;
-                    if (args.tgNotifyError !== undefined) configUpdates.tg_notify_error = args.tgNotifyError ? 1 : 0;
-                    if (args.tgNotifySummary !== undefined) configUpdates.tg_notify_summary = args.tgNotifySummary ? 1 : 0;
                     
                     if (Object.keys(configUpdates).length === 0) return { success: false, error: 'No valid config parameters provided' };
 

@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process';
+﻿import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import os from 'os';
 import * as fs from 'fs';
@@ -10,29 +10,136 @@ import { ProxyTunnelManager } from './proxy-tunnel-manager';
 import { IPChecker } from './ip-checker';
 import { ProfileIconService } from './profile-icon-service';
 import { CookieManager } from './cookie-manager';
+import { ContextFingerprintManager } from './context-fingerprint-manager';
 
 interface ProcessInfo {
     pid: number;
     devToolsPort: number;
     tunnelPort?: number;
+    userDataDir: string;
     proxyOptions?: {
         proxy?: string;
         proxyAuth?: { username?: string; password?: string };
     };
     cdpClient?: any;
     startUrls?: string[];
+    contextId?: string;
+    resolvedTimezone?: string; // Cached timezone from proxy check in launchProfile
 }
 
 export class ChromiumManager {
     private runningProcesses: Map<string, ProcessInfo & { cdpClient?: any }> = new Map();
-    private portCounter = 9222;
     private extensionManager: ExtensionManager;
     private proxyTunnelManager: ProxyTunnelManager;
+    private ipChecker: IPChecker;
+    private db: Database;
+    private contextFingerprintManager: ContextFingerprintManager;
+    private proxyIpCache: Map<string, any>;
     private cachedVersion: string | null = null;
 
-    constructor(private db: Database) {
+    constructor(db: Database) {
+        this.db = db;
         this.extensionManager = new ExtensionManager(db);
         this.proxyTunnelManager = new ProxyTunnelManager();
+        this.ipChecker = new IPChecker();
+        this.contextFingerprintManager = new ContextFingerprintManager();
+        this.proxyIpCache = new Map();
+    }
+
+    /**
+     * Map a flat fingerprint object (as stored in the database) to the nested format used by the stealth script.
+     * @param flat Fingerprint object in flat format
+     * @returns Fingerprint object in nested format
+     */
+    private mapFingerprintToNested(flat: any): any {
+        return {
+            navigator: flat.navigator || {
+                userAgent: flat.user_agent,
+                platform: flat.platform,
+                platformVersion: flat.platform_version,
+                hardwareConcurrency: flat.hardware_concurrency,
+                deviceMemory: flat.device_memory,
+                maxTouchPoints: flat.max_touch_points,
+                doNotTrack: flat.do_not_track
+            },
+            screen: flat.screen || {
+                width: flat.screen_width,
+                height: flat.screen_height,
+                pixelRatio: flat.pixel_ratio
+            },
+            languages: flat.languages_data || {
+                language: flat.language,
+                acceptLanguage: flat.accept_language
+            },
+timezone: flat.timezone_data || {
+                  id: flat.timezone_id || 'UTC',
+                  offset: flat.timezone_offset ?? 0
+              },
+            geolocation: flat.geolocation_latitude ? {
+                latitude: flat.geolocation_latitude,
+                longitude: flat.geolocation_longitude,
+                accuracy: flat.geolocation_accuracy
+            } : undefined,
+            webgl: flat.webgl || {
+                vendor: flat.webgl_vendor,
+                renderer: flat.webgl_renderer
+            }
+        };
+    }
+
+    public getOffsetMinutesForTimezone(timezone: string): number {
+        try {
+            const now = new Date();
+            const options: Intl.DateTimeFormatOptions = { timeZone: timezone, timeZoneName: 'shortOffset', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' };
+            const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(now);
+            const offsetPart = parts.find(p => p.type === 'timeZoneName');
+            if (offsetPart && typeof offsetPart.value === 'string') {
+                const value = offsetPart.value;
+                const match = value.match(/([+-])(\d+)(?::(\d+))?/);
+                if (match) {
+                    const sign = match[1] === '-' ? 1 : -1;
+                    const hours = parseInt(match[2], 10);
+                    const minutes = match[3] ? parseInt(match[3], 10) : 0;
+                    const result = sign * (hours * 60 + minutes);
+                    return result;
+                }
+            }
+        } catch (e) {
+            // fallback to 0
+            console.error(`[getOffsetMinutesForTimezone] exception:`, e);
+        }
+        return 0;
+    }
+
+    /**
+     * Set the base fingerprint for a profile
+     * @param profileId The profile identifier
+     * @param baseFingerprint The base fingerprint data
+     */
+    setBaseFingerprint(profileId: string, baseFingerprint: FingerprintData): void {
+        this.contextFingerprintManager.setBaseFingerprint(profileId, baseFingerprint);
+    }
+
+    /**
+     * Get a context-specific fingerprint for a profile and context
+     * @param profileId The profile identifier
+     * @param contextId The context identifier
+     * @returns The context-specific fingerprint or undefined if not set
+     */
+    getContextFingerprint(profileId: string, contextId: string): FingerprintData | undefined {
+        return this.contextFingerprintManager.getContextFingerprint(profileId, contextId);
+    }
+
+    private async findAvailablePort(): Promise<number> {
+        const net = require('net');
+        return new Promise((resolve, reject) => {
+            const server = net.createServer();
+            server.listen(0, '127.0.0.1', () => {
+                const port = (server.address() as any).port;
+                server.close(() => resolve(port));
+            });
+            server.on('error', reject);
+        });
     }
 
     /**
@@ -116,9 +223,11 @@ export class ChromiumManager {
             throw new Error('Profile is already running');
         }
 
-        const devToolsPort = this.portCounter++;
+        const devToolsPort = await this.findAvailablePort();
         const chromiumPath = this.getChromiumPath();
         let tunnelPort: number | undefined;
+        let contextId: string | undefined;
+        let resolvedTimezoneForProcessInfo: string | undefined;
 
             // Proper stealth flags (NO warnings!)
             const args = [
@@ -132,57 +241,42 @@ export class ChromiumManager {
                 `--window-size=${options.windowWidth || 1920},${options.windowHeight || 1080}`,
                 '--start-maximized',
     
-                // Stealth: Hide "Chrome is being controlled by automated test software"
-                '--exclude-switches=enable-automation',
-                '--disable-blink-features=AutomationControlled',
-                '--use-fake-ui-for-media-stream',
-                '--disable-notifications',
-                '--no-default-browser-check',
-                '--no-first-run',
-                '--disable-blink-features=IdleDetection',
-                '--disable-web-security',
-                '--allow-running-insecure-content',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
+// Stealth: Hide "Chrome is being controlled by automated test software"
+                 '--exclude-switches=enable-automation',
+'--disable-features=AutomationControlled',
+                  '--disable-notifications',
+                 '--disable-features=IdleDetection',
+                 '--allow-running-insecure-content',
     
-                // Masking WebRTC leaks via flags
-                '--force-webrtc-ip-handling-policy=default_public_interface_only',
-                '--disable-blink-features=WebRtcHideLocalIpsWithMdns',
+// Masking WebRTC leaks via flags
+                 '--force-webrtc-ip-handling-policy=default_public_interface_only',
+                 '--disable-features=WebRtcHideLocalIpsWithMdns',
     
                 // DNS Leak Protection
                 '--disable-async-dns',
                 '--disable-dns-over-https',
-                '--disable-features=DnsOverHttps',
-                '--disable-features=AsyncDns',
 
-                '--test-type',
                 `--app-user-model-id=DolfPower.Profile.${profileId}`,
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-breakpad',
-            '--disable-component-extensions-with-background-pages',
-            '--disable-dev-shm-usage',
-            '--disable-features=TranslateUI',
-            '--disable-ipc-flooding-protection',
-            '--disable-renderer-backgrounding',
-            '--metrics-recording-only',
-            '--mute-audio',
-            '--no-service-autorun',
-            '--password-store=basic',
-            '--use-mock-keychain',
-            '--disable-background-timer-throttling',
-            '--disable-hang-monitor',
-            '--disable-prompt-on-repost',
-            '--disable-sync',
-            '--disable-session-crashed-bubble',
-            '--disable-infobars',
-            options.restoreTabs ? '--restore-last-session' : '--restore-last-session=0',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-features=PrivacySandboxSettings4',
-            '--disable-features=OptimizationGuideModelDownloading,OptimizationHints,OptimizationTargetPrediction,OptimizationHintsFetching',
-        ];
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-breakpad',
+                '--disable-dev-shm-usage',
+                '--disable-ipc-flooding-protection',
+                '--disable-renderer-backgrounding',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--password-store=basic',
+                '--use-mock-keychain',
+                '--disable-background-timer-throttling',
+                '--disable-hang-monitor',
+                '--disable-prompt-on-repost',
+                '--disable-sync',
+                '--disable-session-crashed-bubble',
+                '--disable-infobars',
+                options.restoreTabs ? '--restore-last-session' : '--restore-last-session=0',
+                '--disable-features=TranslateUI,PrivacySandboxSettings4,AsyncDns,DnsOverHttps,OptimizationGuideModelDownloading,OptimizationHints,OptimizationTargetPrediction,OptimizationHintsFetching',
+            ];
 
         // Ensure user data dir exists and Preferences is set to normal exit
         try {
@@ -221,6 +315,10 @@ export class ChromiumManager {
             prefs.browser.show_update_promotion_info_bar = false;
             prefs.browser.check_default_browser = false;
             prefs.browser.has_seen_welcome_page = true;
+
+            // Show bookmarks bar
+            if (!prefs.bookmark_bar) prefs.bookmark_bar = {};
+            prefs.bookmark_bar.show_on_all_tabs = true;
             
             // Handle session restoration via Preferences if flag is not enough
             if (options.restoreTabs) {
@@ -231,9 +329,52 @@ export class ChromiumManager {
                 prefs.session.restore_on_startup = 5; // 5 = Open a specific set of pages (but we don't set any)
             }
             
-            fs.writeFileSync(prefsPath, JSON.stringify(prefs));
+fs.writeFileSync(prefsPath, JSON.stringify(prefs));
 
-            // Sync Bookmarks
+// Fetch and set base fingerprint for context-isolated storage
+              const fingerprintRow = await new Promise<any>((resolve) => {
+                  this.db.get('SELECT * FROM fingerprints WHERE profile_id = ?', [profileId], (err, row) => resolve(row));
+              });
+              let baseFingerprint: any = {};
+              if (fingerprintRow) {
+                  baseFingerprint = this.mapFingerprintToNested(fingerprintRow);
+              } else {
+                  // If no fingerprint in database, generate a default one
+                  const { FingerprintGenerator } = require('./fingerprint-generator');
+                  const generator = new FingerprintGenerator('');
+                  baseFingerprint = generator.generateFingerprint('windows_chrome');
+              }
+// If a proxy is provided, adjust timezone to match proxy geo
+               if (options.proxy) {
+                   try {
+                       const proxyUrl = new URL(options.proxy.includes('://') ? options.proxy : `http://${options.proxy}`);
+                       const proxyCheck = await this.ipChecker.checkProxyIP({
+                           protocol: proxyUrl.protocol.replace(':', '') as any,
+                           host: proxyUrl.hostname,
+                           port: parseInt(proxyUrl.port) || (proxyUrl.protocol === 'https:' ? 443 : 80),
+                           username: options.proxyAuth?.username,
+                           password: options.proxyAuth?.password
+});
+                        if (proxyCheck.success && proxyCheck.info && proxyCheck.info.timezone) {
+                            const tz = proxyCheck.info.timezone;
+                            const offsetMinutes = this.getOffsetMinutesForTimezone(tz);
+                            // Clone baseFingerprint to avoid mutating original
+                            baseFingerprint = JSON.parse(JSON.stringify(baseFingerprint));
+                            baseFingerprint.timezone = { id: tz, offset: offsetMinutes };
+                            resolvedTimezoneForProcessInfo = tz;
+                        } else {
+                        }
+                    } catch (e) {
+                        console.warn('Failed to adjust timezone for proxy:', e);
+                    }
+                }
+                this.setBaseFingerprint(profileId, baseFingerprint);
+             
+// Generate a context ID for this launch
+              const { randomUUID } = require('crypto');
+              contextId = randomUUID();
+             
+             // Sync Bookmarks
             const bookmarks: any[] = await new Promise((resolve) => {
                 this.db.all(
                     `SELECT b.* FROM bookmarks b 
@@ -246,14 +387,14 @@ export class ChromiumManager {
 
             if (bookmarks.length > 0) {
                 const bookmarksPath = path.join(profileDir, 'Bookmarks');
+                let bookmarkIdCounter = 1000;
                 const bookmarkData = {
-                    checksum: "",
                     roots: {
                         bookmark_bar: {
                             children: bookmarks.map(bm => ({
                                 date_added: "13316000000000000",
                                 guid: uuidv4(),
-                                id: Math.floor(Math.random() * 1000000).toString(),
+                                id: (bookmarkIdCounter++).toString(),
                                 name: bm.name,
                                 type: "url",
                                 url: bm.url
@@ -309,12 +450,11 @@ export class ChromiumManager {
                     port: parseInt(proxyUrl.port) || (proxyUrl.protocol === 'https:' ? 443 : 80),
                     username: options.proxyAuth?.username,
                     password: options.proxyAuth?.password
-                }, true); // Start BLOCKED until IP is verified
+                }, false); // Start UNBLOCKED — extensions need network during init, proxy is already pre-tested via curl
 
                 // Point Chromium to our LOCAL tunnel instead of real proxy
                 args.push(`--proxy-server=http://127.0.0.1:${tunnelPort}`);
-                args.push('--proxy-bypass-list=127.0.0.1;localhost;<-loopback>');
-                console.log(`✓ Routing profile ${profileId} through local tunnel on port ${tunnelPort}`);
+                args.push('--proxy-bypass-list=127.0.0.1;localhost;<-loopback;duckduckgo.com');
             } catch (e) {
                 console.error('Failed to setup proxy tunnel:', e);
                 // Fallback to direct connection if tunnel fails
@@ -332,8 +472,15 @@ export class ChromiumManager {
         });
 
         const extensions = Array.from(allExtensionsMap.values());
-        if (extensions.length > 0) {
-            const extensionArgs = this.extensionManager.getExtensionArgs(extensions);
+        const validExtensions = extensions.filter(ext => {
+            if (!ext.path) { console.warn(`[ChromiumManager] Extension ${ext.id} (${ext.name}) has no path`); return false; }
+            if (!fs.existsSync(ext.path)) { console.warn(`[ChromiumManager] Extension ${ext.id} (${ext.name}) path does not exist: ${ext.path}`); return false; }
+            const manifestPath = path.join(ext.path, 'manifest.json');
+            if (!fs.existsSync(manifestPath)) { console.warn(`[ChromiumManager] Extension ${ext.id} (${ext.name}) has no manifest.json at: ${manifestPath}`); return false; }
+            return true;
+        });
+        if (validExtensions.length > 0) {
+            const extensionArgs = this.extensionManager.getExtensionArgs(validExtensions);
             args.push(...extensionArgs);
         }
 
@@ -351,6 +498,97 @@ export class ChromiumManager {
             args.push('--use-mock-keychain');
         }
 
+        // Compute extension IDs and write Secure Preferences BEFORE launch to auto-pin extensions
+        // This must happen before Chrome spawns so it reads the pinned state on startup
+        // NOTE: For CWS extensions (with update_url), we can't predict IDs without manifest.key.
+        // We use known CWS IDs for popular extensions, path-based IDs for local unpacked extensions.
+        if (validExtensions.length > 0) {
+            try {
+                const profileDir = path.join(userDataDir, 'Default');
+                const securePrefsPath = path.join(profileDir, 'Secure Preferences');
+                let securePrefs: any = {};
+                if (fs.existsSync(securePrefsPath)) {
+                    try { securePrefs = JSON.parse(fs.readFileSync(securePrefsPath, 'utf8')); } catch (e) {}
+                }
+                if (!securePrefs.extensions) securePrefs.extensions = {};
+                if (!securePrefs.extensions.ui) securePrefs.extensions.ui = {};
+                
+                // Known CWS extension IDs (from Chrome Web Store)
+                const knownCwsIds: Record<string, string> = {
+                    // MetaMask
+                    'd92c4e9b-0e74-4846-8dd6-0178eccefe3d': 'fignfifoniblkonapihmkfakmlgkbkcf',
+                    // DuckDuckGo Privacy Essentials
+                    '9189fd29-5b03-4840-abbb-e3f02bf6f662': 'ghbmnnjooekpmoecnnnilnnbdlolhkhi',
+                };
+                
+                // Compute Chrome extension IDs for unpacked extensions (path-based algorithm)
+                // Chrome algorithm for non-CWS: SHA256(absolute_path), first 16 bytes = 32 hex chars, each hex digit 0-f -> a-p
+                const crypto = require('crypto');
+                const pinnedIds: string[] = [];
+                
+                for (const ext of validExtensions) {
+                    const manifestPath = path.join(ext.path, 'manifest.json');
+                    let extId: string | null = null;
+
+                    // 1. Check known CWS IDs by our internal UUID
+                    if (knownCwsIds[ext.id]) {
+                        extId = knownCwsIds[ext.id];
+                    }
+                    // 2. If manifest has key, compute CWS ID from public key (32 chars, a-p)
+                    else if (fs.existsSync(manifestPath)) {
+                        try {
+                            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+                            if (manifest.key) {
+                                const hash = crypto.createHash('sha256').update(manifest.key).digest('hex').substring(0, 32);
+                                const hexToAp: Record<string, string> = {
+                                    '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e', '5': 'f',
+                                    '6': 'g', '7': 'h', '8': 'i', '9': 'j', 'a': 'k', 'b': 'l',
+                                    'c': 'm', 'd': 'n', 'e': 'o', 'f': 'p'
+                                };
+                                let id = '';
+                                for (const c of hash) {
+                                    id += hexToAp[c] || c;
+                                }
+                                extId = id;
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    // 3. Fallback: path-based ID (32 chars, a-p) for unpacked extensions without key
+                    // Chrome uses: SHA256(absolute_path), first 16 bytes = 32 hex chars, mapped to a-p
+                    if (!extId) {
+                        const absolutePath = path.resolve(ext.path);
+                        const hash = crypto.createHash('sha256').update(absolutePath).digest('hex').substring(0, 32);
+                        const hexToAp: Record<string, string> = {
+                            '0': 'a', '1': 'b', '2': 'c', '3': 'd', '4': 'e', '5': 'f',
+                            '6': 'g', '7': 'h', '8': 'i', '9': 'j', 'a': 'k', 'b': 'l',
+                            'c': 'm', 'd': 'n', 'e': 'o', 'f': 'p'
+                        };
+                        let id = '';
+                        for (const c of hash) {
+                            id += hexToAp[c] || c;
+                        }
+                        extId = id;
+                    }
+                    
+                    if (extId) {
+                        pinnedIds.push(extId);
+                    }
+                }
+                
+                if (pinnedIds.length > 0) {
+                    // Chrome expects toolbar positions as integers (extension_id -> position), not objects
+                    securePrefs.extensions.ui.toolbar = pinnedIds.reduce((acc: any, id: string, index: number) => {
+                        acc[id] = index;
+                        return acc;
+                    }, {});
+                    fs.writeFileSync(securePrefsPath, JSON.stringify(securePrefs));
+                }
+            } catch (e: any) {
+                console.warn('[ChromiumManager] Failed to pre-pin extensions:', e.message);
+            }
+        }
+
         // Add IP check page as startup URL
         // If we have a proxy or fingerprint to apply, we start with about:blank
         // and navigate later via CDP to prevent race conditions (leaks)
@@ -360,12 +598,12 @@ export class ChromiumManager {
         try {
             if (os.platform() === 'win32') {
                 const { execSync } = require('child_process');
-                const output = execSync(`powershell "(Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Where-Object {$_.Primary -eq $true} | Select-Object -ExpandProperty Bounds | ForEach-Object {'$($_.Width) $($_.Height)' })"`, { encoding: 'utf8' });
-                const match = output.trim().match(/(\d+)\s+(\d+)/);
-                if (match) {
-                    maxScreenWidth = parseInt(match[1]);
-                    maxScreenHeight = parseInt(match[2]);
-                }
+                 const output = execSync('powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Where-Object {$_.Primary -eq $true} | Select-Object -ExpandProperty Bounds | ForEach-Object { $_.Width; $_.Height }"', { encoding: 'utf8' });
+                 const lines = output.trim().split('\n').map(Number);
+                 if (lines.length >= 2 && !isNaN(lines[0]) && !isNaN(lines[1])) {
+                     maxScreenWidth = lines[0];
+                     maxScreenHeight = lines[1];
+                 }
             }
         } catch (e) { }
         const screenWidth = Math.min(options.windowWidth || 1920, maxScreenWidth);
@@ -419,11 +657,17 @@ $Shortcut.Save()
         // Launch Chromium
         const browserProcess = spawn(chromiumPath, args, {
             detached: true,
-            stdio: 'ignore',
+            stdio: ['ignore', 'pipe', 'pipe'],
             windowsHide: false,
-            env: {
-                ...process.env,
-                ...(os.platform() === 'win32' && iconPath ? { APPDATA: path.dirname(iconPath) } : {})
+            env: { ...process.env }
+        });
+
+        // Capture Chrome stderr for diagnostics
+        let chromeStderr = '';
+        browserProcess.stderr?.on('data', (data) => {
+            const msg = data.toString();
+            chromeStderr += msg;
+            if (msg.includes('extension') || msg.includes('Extension') || msg.includes('ERROR') || msg.includes('error')) {
             }
         });
 
@@ -434,8 +678,11 @@ $Shortcut.Save()
             pid: browserProcess.pid!,
             devToolsPort,
             tunnelPort,
+            userDataDir,
             proxyOptions: options,
-            startUrls: [] // Will be set in applyFingerprintViaCDP or launch
+            startUrls: [],
+            contextId: contextId,
+            resolvedTimezone: resolvedTimezoneForProcessInfo
         };
 
         this.runningProcesses.set(profileId, processInfo);
@@ -451,7 +698,6 @@ $Shortcut.Save()
             this.runningProcesses.delete(profileId);
         });
 
-        console.log(`✓ Launched profile ${profileId} on port ${devToolsPort}`);
 
         return processInfo;
     }
@@ -488,7 +734,6 @@ $Shortcut.Save()
             // Wait a moment for OS to release file handles
             await new Promise(r => setTimeout(r, 1000));
             
-            console.log(`✓ Terminated profile ${profileId}`);
         } catch (error) {
             console.error(`Failed to terminate profile ${profileId}:`, error);
         }
@@ -555,7 +800,6 @@ $Shortcut.Save()
             }
         }
 
-        console.log('✓ All profiles terminated');
     }
 
     /**
@@ -567,7 +811,6 @@ $Shortcut.Save()
         // Open deferred start URLs after delay to ensure page is stable
         const info = this.runningProcesses.get(profileId);
         if (info && info.startUrls && info.startUrls.length > 0) {
-            console.log(`🌐 Proxy verified for ${profileId}, opening ${info.startUrls.length} start URLs`);
             const urls = [...info.startUrls];
             setTimeout(async () => {
                 try {
@@ -601,7 +844,6 @@ $Shortcut.Save()
                 const { Page: MainPage } = mainClient;
                 await MainPage.enable();
                 await MainPage.navigate({ url: urls[0].trim() });
-                console.log(`🌐 Navigating main tab to start URL: ${urls[0].trim()}`);
                 await mainClient.close();
             }
 
@@ -610,7 +852,6 @@ $Shortcut.Save()
                 const url = urls[i];
                 if (url && url.trim()) {
                     await Target.createTarget({ url: url.trim() });
-                    console.log(`🌐 Opening additional start URL: ${url.trim()}`);
                 }
             }
 
@@ -680,44 +921,40 @@ $Shortcut.Save()
     /**
      * Apply fingerprint via Chrome DevTools Protocol
      */
-    public async applyFingerprintViaCDP(profileId: string, port: number, fingerprint: any, startUrls?: string[], options: { restoreTabs?: boolean } = {}): Promise<void> {
+    public async applyFingerprintViaCDP(profileId: string, port: number, fingerprint: any, startUrls?: string[], options: { restoreTabs?: boolean; contextId?: string } = {}): Promise<void> {
         try {
             const CDP = require('chrome-remote-interface');
 
-            // Map DB flat structure to expected nested structure if necessary
-            const fp: any = {
-                navigator: fingerprint.navigator || {
-                    userAgent: fingerprint.user_agent,
-                    platform: fingerprint.platform,
-                    platformVersion: fingerprint.platform_version,
-                    hardwareConcurrency: fingerprint.hardware_concurrency,
-                    deviceMemory: fingerprint.device_memory,
-                    maxTouchPoints: fingerprint.max_touch_points,
-                    doNotTrack: fingerprint.do_not_track
-                },
-                screen: fingerprint.screen || {
-                    width: fingerprint.screen_width,
-                    height: fingerprint.screen_height,
-                    pixelRatio: fingerprint.pixel_ratio
-                },
-                languages: fingerprint.languages_data || {
-                    language: fingerprint.language,
-                    acceptLanguage: fingerprint.accept_language
-                },
-                timezone: fingerprint.timezone_data || {
-                    id: fingerprint.timezone_id
-                },
-                geolocation: fingerprint.geolocation_latitude ? {
-                    latitude: fingerprint.geolocation_latitude,
-                    longitude: fingerprint.geolocation_longitude,
-                    accuracy: fingerprint.geolocation_accuracy
-                } : undefined,
-                webgl: fingerprint.webgl || {
-                    vendor: fingerprint.webgl_vendor,
-                    renderer: fingerprint.webgl_renderer
+            // If a contextId is provided, use context-isolated fingerprint
+            let fp: any;
+            if (options.contextId) {
+                // Ensure we have a base fingerprint set for this profile
+                if (!this.contextFingerprintManager.getBaseFingerprint(profileId)) {
+                    this.setBaseFingerprint(profileId, fingerprint);
                 }
-            };
-
+                const contextFp = this.getContextFingerprint(profileId, options.contextId);
+                if (contextFp) {
+                    fp = contextFp; // already in nested format
+                } else {
+                    // Fallback to base fingerprint
+                    const baseFp = this.contextFingerprintManager.getBaseFingerprint(profileId);
+                    if (baseFp) {
+                        fp = baseFp;
+                    } else {
+                        // Last resort: use the provided fingerprint and map it
+                        fp = this.mapFingerprintToNested(fingerprint);
+                    }
+                }
+            } else {
+                // No contextId provided, map the provided fingerprint to nested format
+                fp = this.mapFingerprintToNested(fingerprint);
+                // Also set it as the base fingerprint for future use
+                if (!this.contextFingerprintManager.getBaseFingerprint(profileId)) {
+                    this.setBaseFingerprint(profileId, fp);
+                }
+            }
+            
+            
             // Wait for CDP to be available (retry loop)
             let client;
             for (let i = 0; i < 20; i++) {
@@ -733,43 +970,244 @@ $Shortcut.Save()
                 throw new Error(`Failed to connect to CDP on port ${port} after 10s`);
             }
 
-            const { Page, Network, Emulation, Browser, Target, Runtime } = client;
+            // CRITICAL: Also connect to the browser-level target for global script injection
+            // addScriptToEvaluateOnNewDocument on a page target only affects that page.
+            // We need to set it on each page target AND listen for new targets.
+            let browserClient: any = null;
+            try {
+                // Get the browser-level websocket URL
+                const versionResponse = await fetch(`http://127.0.0.1:${port}/json/version`);
+                const versionData = await versionResponse.json() as any;
+                if (versionData.webSocketDebuggerUrl) {
+                    browserClient = await CDP({ target: versionData.webSocketDebuggerUrl });
+                }
+            } catch (e) {
+                // Browser-level connection optional
+            }
+const { Page, Network, Emulation, Browser, Target, Runtime } = client;
 
             await Page.enable();
+            
+            // CRITICAL: Resolve timezone from cache BEFORE creating injection script
+            // This ensures JS injection uses the correct timezone, not 'auto'
+            {
+                const cachedInfoEarly = this.runningProcesses.get(profileId);
+                if ((!fp.timezone?.id || fp.timezone.id === 'auto') && cachedInfoEarly?.resolvedTimezone) {
+                    const tz = cachedInfoEarly.resolvedTimezone;
+                    const offset = this.getOffsetMinutesForTimezone(tz);
+                    fp.timezone = { id: tz, offset };
+                }
+            }
+
+            // CRITICAL: Capture REAL system timezone offset BEFORE CDP changes it
+            // This is needed for Date.now() adjustment in JS injection
+            const realSystemOffset = new Date().getTimezoneOffset();
+            
+            // Inject stealth scripts
+            const { FingerprintGenerator } = require('./fingerprint-generator');
+            const generator = new FingerprintGenerator('');
+            
+            // Add system offset to fingerprint for JS injection
+            const fpWithSystemOffset = {
+                ...fp,
+                _systemTimezoneOffset: realSystemOffset
+            };
+            
+            const stealthScript = generator.generateInjectionScript(fpWithSystemOffset as any);
+            // Inject the script into all new documents for THIS session/target
+            await Page.addScriptToEvaluateOnNewDocument({ source: stealthScript });
             await Network.enable();
             await Runtime.enable();
+            // Note: Emulation domain does not require an explicit enable command
+
             await Target.setDiscoverTargets({ discover: true });
 
-            const info = this.runningProcesses.get(profileId);
+            // CRITICAL: Apply injection script to ALL new page targets
+            // addScriptToEvaluateOnNewDocument only works for the target it's called on.
+            // We must listen for targetCreated and apply it to each new page.
+            Target.on('targetCreated', async (event: any) => {
+                const t = event.targetInfo;
+                if (t.type !== 'page') return;
+                try {
+                    await new Promise(r => setTimeout(r, 300));
+                    const newTargetClient = await CDP({ port, targetId: t.targetId });
+                    const { Page: NPage } = newTargetClient;
+                    await NPage.enable();
+                    await NPage.addScriptToEvaluateOnNewDocument({ source: stealthScript });
+                    await newTargetClient.close();
+                } catch (e) { /* ignore */ }
+            });
 
-            // IMMEDIATELY navigate to the IP check page to avoid blank screen
-            const ipCheckUrl = 'file:///' + path.join(__dirname, '..', 'ui', 'ip-check.html').replace(/\\/g, '/');
-            const ipCheckUrlWithId = `${ipCheckUrl}?profileId=${profileId}`;
+            // Set timezone override EARLY (before any page loads)
+            // This prevents race condition where page loads before timezone is set
+            if (fp.timezone && fp.timezone.id && fp.timezone.id !== 'auto') {
+                try {
+                    await Emulation.setTimezoneOverride({ timezoneId: fp.timezone.id });
+                } catch (e: any) {
+                    console.warn('[CDP] Early timezone override failed:', e.message);
+                }
+            }
+
+            // CRITICAL: Apply timezone AND injection script to ALL existing page targets
+            // setTimezoneOverride only applies to the current target by default
+            const timezoneIdForTargets = fp.timezone?.id;
+            if (timezoneIdForTargets && timezoneIdForTargets !== 'auto') {
+                try {
+                    const allTargets = await Target.getTargets();
+                    for (const t of allTargets.targetInfos) {
+                        if (t.type === 'page' || t.type === 'iframe') {
+                            try {
+                                const targetClient = await CDP({ port, targetId: t.targetId });
+                                const { Emulation: TargetEmulation, Page: TargetPage, Runtime: TargetRuntime } = targetClient;
+                                await TargetPage.enable().catch(() => {});
+                                await TargetRuntime.enable().catch(() => {});
+                                await TargetEmulation.setTimezoneOverride({ timezoneId: timezoneIdForTargets });
+                                // Also inject stealth script into already-loaded pages
+                                await TargetRuntime.evaluate({ expression: stealthScript }).catch(() => {});
+                                await TargetPage.addScriptToEvaluateOnNewDocument({ source: stealthScript }).catch(() => {});
+                                await targetClient.close();
+                            } catch (e) { /* ignore per-target errors */ }
+                        }
+                    }
+                } catch (e: any) {
+                    console.warn('[CDP] Failed to apply timezone to all targets:', e.message);
+                }
+            }
+
+            // CRITICAL: Listen for new targets and apply timezone + injection to each one
+            // This ensures timezone is correct in every new tab the user opens
+            if (timezoneIdForTargets && timezoneIdForTargets !== 'auto') {
+                Target.on('targetCreated', async (event: any) => {
+                    const t = event.targetInfo;
+                    if (t.type === 'page') {
+                        // Small delay to let target initialize
+                        await new Promise(r => setTimeout(r, 200));
+                        try {
+                            const targetClient = await CDP({ port, targetId: t.targetId });
+                            const { Emulation: TargetEmulation, Page: TargetPage } = targetClient;
+                            await TargetEmulation.setTimezoneOverride({ timezoneId: timezoneIdForTargets });
+                            await TargetPage.addScriptToEvaluateOnNewDocument({ source: stealthScript });
+                            await targetClient.close();
+                        } catch (e) { /* ignore */ }
+                    }
+                });
+            }
+
+            // Diagnostic: Check what targets Chrome actually has (extensions, background pages, etc.)
+            let loadedExtensionIds: string[] = [];
+            try {
+                const targets = await Target.getTargets();
+                const extensionTargets = targets.targetInfos.filter((t: any) => t.type === 'service_worker' || t.type === 'background_page' || t.type === 'other');
+                for (const t of targets.targetInfos) {
+                    // Extract extension ID from chrome-extension:// URLs
+                    if (t.url && t.url.startsWith('chrome-extension://')) {
+                        const match = t.url.match(/chrome-extension:\/\/([^/]+)/);
+                        if (match && match[1]) {
+                            loadedExtensionIds.push(match[1]);
+                        }
+                    }
+                }
+                if (extensionTargets.length === 0) {
+                } else {
+                }
+            } catch (diagErr: any) {
+                console.warn('[CDP Diagnostic] Failed to enumerate targets:', diagErr.message);
+            }
+
+            // Get userDataDir from running process info
+            const processInfo = this.runningProcesses.get(profileId);
+            const userDataDir = processInfo?.userDataDir;
+            if (!userDataDir) {
+            } else {
+                // AUTO-PIN EXTENSIONS: Write Secure Preferences to pin loaded extensions to toolbar
+                // This mimics AdsPower/Dolphin approach - pin extensions immediately after Chrome loads
+                try {
+                    const profileDir = path.join(userDataDir, 'Default');
+                    const securePrefsPath = path.join(profileDir, 'Secure Preferences');
+                    let securePrefs: any = {};
+                    if (fs.existsSync(securePrefsPath)) {
+                        try { securePrefs = JSON.parse(fs.readFileSync(securePrefsPath, 'utf8')); } catch (e) {}
+                    }
+                    if (!securePrefs.extensions) securePrefs.extensions = {};
+                    if (!securePrefs.extensions.ui) securePrefs.extensions.ui = {};
+                    
+                    // Use actually loaded IDs from CDP (more reliable)
+                    const pinnedIds = [...new Set(loadedExtensionIds)];
+                    if (pinnedIds.length > 0) {
+                        securePrefs.extensions.ui.toolbar = pinnedIds.reduce((acc: any, id: string, index: number) => {
+                            acc[id] = index;
+                            return acc;
+                        }, {});
+                        fs.writeFileSync(securePrefsPath, JSON.stringify(securePrefs));
+                    }
+                } catch (e: any) {
+                    console.warn('[CDP] Failed to auto-pin extensions:', e.message);
+                }
+
+                // FORCE BOOKMARKS BAR: Rewrite Preferences after Chrome initializes (overwrites Chrome's defaults)
+                // Chrome reads Preferences on startup but may reset bookmark_bar. We force it after connection.
+                try {
+                    const profileDir = path.join(userDataDir, 'Default');
+                    const prefsPath = path.join(profileDir, 'Preferences');
+                    if (fs.existsSync(prefsPath)) {
+                        const prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf8'));
+                        if (!prefs.bookmark_bar) prefs.bookmark_bar = {};
+                        prefs.bookmark_bar.show_on_all_tabs = true;
+                        prefs.bookmark_bar.visible_on_all_tabs = true;
+                        if (!prefs.browser) prefs.browser = {};
+                        prefs.browser.always_show_bookmarks_bar = true;
+                        fs.writeFileSync(prefsPath, JSON.stringify(prefs));
+                    }
+                } catch (e: any) {
+                    console.warn('[CDP] Failed to force bookmarks bar:', e.message);
+                }
+            }
+
+const info = this.runningProcesses.get(profileId);
             
             // Store start URLs for later (after proxy verification), normalize URLs
+            let infoStartUrls: string[] = [];
             if (info && startUrls && startUrls.length > 0) {
-                info.startUrls = startUrls.map(u => {
+                infoStartUrls = startUrls.map(u => {
                     const trimmed = (u || '').trim();
                     if (!trimmed) return '';
                     // Add protocol if missing
                     return trimmed.match(/^https?:\/\//i) ? trimmed : `https://${trimmed}`;
                 }).filter(u => u);
             }
-
-            // Always navigate to IP check first
-            console.log(`🌐 Navigating primary tab to IP check: ${ipCheckUrlWithId}`);
-            await Page.navigate({ url: ipCheckUrlWithId });
+            const ipCheckUrl = 'file:///' + path.join(__dirname, '..', 'ui', 'ip-check.html').replace(/\\/g, '/');
+            const ipCheckUrlWithId = `${ipCheckUrl}?profileId=${profileId}`;
+            
+            let mainUrl: string;
+            const additionalUrls: string[] = [];
+            
+            if (infoStartUrls.length > 0) {
+                mainUrl = infoStartUrls[0];
+                // Additional tabs: IP check page + remaining startUrls (from index 1)
+                additionalUrls.push(ipCheckUrlWithId);
+                for (let i = 1; i < infoStartUrls.length; i++) {
+                    additionalUrls.push(infoStartUrls[i]);
+                }
+            } else {
+                mainUrl = ipCheckUrlWithId;
+                // No additional URLs
+            }
+            
+            const navResult = await Page.navigate({ url: mainUrl });
+            
+            // Store for later tab opening
+            if (info) {
+                info.startUrls = additionalUrls;
+            }
 
             // Set up proxy authentication to avoid browser popups
             if (info && info.proxyOptions && info.proxyOptions.proxyAuth) {
                 const { username, password } = info.proxyOptions.proxyAuth;
                 if (username) {
-                    console.log(`[CDP] Setting up proxy authentication (Fetch) for profile ${profileId}`);
                     const { Fetch } = client;
                     await Fetch.enable({ handleAuthRequests: true });
                     
                     Fetch.authRequired(async (params: any) => {
-                        console.log(`[CDP] Responding to auth challenge for ${params.authChallenge?.source} auth`);
                         await Fetch.continueWithAuth({
                             requestId: params.requestId,
                             authChallengeResponse: {
@@ -880,7 +1318,15 @@ $Shortcut.Save()
 
             let resolvedIp: string | undefined;
 
-            if (timezoneId === 'auto' || !geolocation || language === 'auto_ip' || fingerprint.webrtc_mode === 'altered') {
+            // Use cached timezone from launchProfile if available and timezone is 'auto'
+            const cachedInfo = this.runningProcesses.get(profileId);
+            if (timezoneId === 'auto' && cachedInfo?.resolvedTimezone) {
+                timezoneId = cachedInfo.resolvedTimezone;
+                const cachedOffset = this.getOffsetMinutesForTimezone(timezoneId);
+                fp.timezone = { id: timezoneId, offset: cachedOffset };
+            }
+
+            if (timezoneId === 'auto' || language === 'auto_ip' || fingerprint.webrtc_mode === 'altered') {
                 const info = this.runningProcesses.get(profileId);
                 if (info && info.proxyOptions && info.proxyOptions.proxy) {
                     try {
@@ -912,7 +1358,9 @@ $Shortcut.Save()
                                 } catch (e) {
                                     fp.timezone.offset = 0;
                                 }
-                                console.log(`✓ Resolved timezone for profile ${profileId} via proxy: ${timezoneId} (Offset: ${fp.timezone.offset})`);
+                                // Cache the resolved timezone in processInfo for future calls
+                                const procInfo = this.runningProcesses.get(profileId);
+                                if (procInfo) procInfo.resolvedTimezone = timezoneId;
                             }
 
                             if (!geolocation) {
@@ -921,13 +1369,11 @@ $Shortcut.Save()
                                     longitude: ipInfo.lon,
                                     accuracy: 10 + Math.floor(Math.random() * 50)
                                 };
-                                console.log(`✓ Resolved geolocation for profile ${profileId} via proxy: ${ipInfo.lat}, ${ipInfo.lon}`);
                             }
 
                             if (language === 'auto_ip') {
                                 language = ipChecker.getLanguageForCountry(ipInfo.countryCode);
                                 acceptLanguage = `${language},en;q=0.9`;
-                                console.log(`✓ Resolved language for profile ${profileId} via proxy: ${language}`);
                             }
                         }
                     } catch (e) {
@@ -943,6 +1389,13 @@ $Shortcut.Save()
             // Update fingerprint object with resolved data for stealth script
             if (!fp.timezone) fp.timezone = {};
             fp.timezone.id = timezoneId;
+            
+            // CRITICAL: Always calculate offset if not already set
+            // This ensures timezone spoofing works even without proxy
+            if (typeof fp.timezone.offset !== 'number') {
+                fp.timezone.offset = this.getOffsetMinutesForTimezone(timezoneId);
+            }
+            
             fp.geolocation = geolocation;
             if (!fp.languages) fp.languages = {};
             fp.languages.language = language;
@@ -952,24 +1405,41 @@ $Shortcut.Save()
             fp.webrtc.mode = fingerprint.webrtc_mode;
             fp.webrtc.publicIp = fingerprint.webrtc_public_ip || resolvedIp;
 
-            // Only call setLocaleOverride if we actually have a language and it's not default
-            // And handle the case where it might already be set
-            if (language && language !== 'en-US' && language !== 'auto_ip') {
-                try {
-                    await Emulation.setLocaleOverride({ locale: language }).catch((err: any) => {
-                        if (!err.message?.includes('Already in effect')) {
-                            console.warn('Locale override error:', err.message);
-                        }
-                    });
-                } catch (e: any) {
-                    console.warn('Failed to set locale override:', e.message);
-                }
-            }
-
+            // ====== CRITICAL: Apply CDP Emulation with resolved values ======
+            
+            // 1. Set/Update Timezone Override (after proxy IP resolution)
+            // Note: May have been set early, but we update with correct value from proxy
             try {
                 await Emulation.setTimezoneOverride({ timezoneId });
             } catch (e: any) {
-                console.warn('Failed to set timezone override:', e.message);
+                console.warn('[CDP] Failed to set timezone override:', e.message);
+            }
+
+            // CRITICAL: Re-inject stealth script with resolved timezone
+            // The initial script was injected with 'auto' timezone - now we have the real one
+            // This ensures all new pages get the correct timezone in JS
+            try {
+                const { FingerprintGenerator: FG2 } = require('./fingerprint-generator');
+                const gen2 = new FG2('');
+                const updatedFp = { ...fp, _systemTimezoneOffset: new Date().getTimezoneOffset() };
+                const updatedScript = gen2.generateInjectionScript(updatedFp as any);
+                await Page.addScriptToEvaluateOnNewDocument({ source: updatedScript });
+                
+                // Also execute in current page context to update existing page
+                await Runtime.evaluate({ expression: updatedScript });
+            } catch (e: any) {
+                console.warn('[CDP] Failed to re-inject stealth script:', e.message);
+            }
+
+            // 2. Set Locale Override
+            if (language && language !== 'en-US' && language !== 'auto_ip') {
+                try {
+                    await Emulation.setLocaleOverride({ locale: language });
+                } catch (e: any) {
+                    if (!e.message?.includes('Already in effect')) {
+                        console.warn('[CDP] Locale override error:', e.message);
+                    }
+                }
             }
 
             if (geolocation) {
@@ -1008,17 +1478,13 @@ $Shortcut.Save()
                 headers: { 'Accept-Language': acceptLanguage }
             });
 
-            // Inject stealth scripts
-            const { FingerprintGenerator } = require('./fingerprint-generator');
-            const generator = new FingerprintGenerator('');
-            const stealthScript = generator.generateInjectionScript(fp as any);
+            
 
             // Apply Cookies from Database (Primary for migrated profiles)
             try {
                 const cookieManager = new CookieManager(this.db);
                 const cookies = await cookieManager.getCookies(profileId);
                 if (cookies.length > 0) {
-                    console.log(`[CDP] Applying ${cookies.length} cookies for profile ${profileId}`);
                     await cookieManager.setCookiesViaCDP(client, cookies);
                 }
             } catch (cookieErr) {
@@ -1053,13 +1519,18 @@ $Shortcut.Save()
                     if (url && url.trim()) {
                         try {
                             await Target.createTarget({ url: url.trim() });
-                            console.log(`🌐 Opening additional start URL: ${url.trim()}`);
                         } catch (e) {
                             console.error('Failed to open additional tab:', e);
                         }
                     }
                 }
                 info.startUrls = [];
+            }
+
+            // Save CDP client to processInfo so it stays alive for target listeners
+            const procInfoForClient = this.runningProcesses.get(profileId);
+            if (procInfoForClient) {
+                procInfoForClient.cdpClient = client;
             }
 
             // DO NOT close client here, it will be closed in terminateProfile or on exit

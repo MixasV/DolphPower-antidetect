@@ -1,4 +1,4 @@
-import sqlite3 from 'sqlite3';
+﻿import sqlite3 from 'sqlite3';
 import path from 'path';
 import os from 'os';
 import fs from 'fs/promises';
@@ -170,25 +170,31 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           db.run(`ALTER TABLE fingerprints ADD COLUMN chrome_object_spoofing INTEGER DEFAULT 1`, () => { });
           db.run(`ALTER TABLE fingerprints ADD COLUMN perf_jitter INTEGER DEFAULT 1`, () => { });
 
-          // Proxies table
-          db.run(`
-            CREATE TABLE IF NOT EXISTS proxies (
-              id TEXT PRIMARY KEY,
-              name TEXT NOT NULL,
-              protocol TEXT CHECK(protocol IN ('http', 'https', 'socks5')),
-              host TEXT NOT NULL,
-              port INTEGER NOT NULL,
-              username TEXT,
-              password TEXT,
-              group_id TEXT,
-              created_at INTEGER NOT NULL
-            )
-          `);
+           // Proxies table
+           db.run(`
+             CREATE TABLE IF NOT EXISTS proxies (
+               id TEXT PRIMARY KEY,
+               name TEXT NOT NULL,
+               protocol TEXT CHECK(protocol IN ('http', 'https', 'socks5')),
+               host TEXT NOT NULL,
+               port INTEGER NOT NULL,
+               username TEXT,
+               password TEXT,
+               group_id TEXT,
+               country_code TEXT,
+               created_at INTEGER NOT NULL
+             )
+           `);
 
-          // Migration: Add group_id column if it doesn't exist
-          db.run(`ALTER TABLE proxies ADD COLUMN group_id TEXT`, (err) => {
-            // Ignore error if column already exists
-          });
+           // Migration: Add group_id column if it doesn't exist
+           db.run(`ALTER TABLE proxies ADD COLUMN group_id TEXT`, (err) => {
+             // Ignore error if column already exists
+           });
+
+           // Migration: Add country_code column if it doesn't exist
+           db.run(`ALTER TABLE proxies ADD COLUMN country_code TEXT`, (err) => {
+             // Ignore error if column already exists
+           });
 
           // Cookies table
           db.run(`
@@ -265,17 +271,20 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           // Migration: Add group_id to extensions
           db.run(`ALTER TABLE extensions ADD COLUMN group_id TEXT`, () => { });
 
-          // Profile Extensions (Join table)
-          db.run(`
-            CREATE TABLE IF NOT EXISTS profile_extensions (
-              profile_id TEXT NOT NULL,
-              extension_id TEXT NOT NULL,
-              enabled INTEGER DEFAULT 1,
-              PRIMARY KEY (profile_id, extension_id),
-              FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
-              FOREIGN KEY (extension_id) REFERENCES extensions(id) ON DELETE CASCADE
-            )
-          `);
+           // Profile Extensions (Join table)
+           db.run(`
+             CREATE TABLE IF NOT EXISTS profile_extensions (
+               profile_id TEXT NOT NULL,
+               extension_id TEXT NOT NULL,
+               enabled INTEGER DEFAULT 1,
+               PRIMARY KEY (profile_id, extension_id),
+               FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+               FOREIGN KEY (extension_id) REFERENCES extensions(id) ON DELETE CASCADE
+             )
+           `);
+
+           // Migration: Add enabled column to profile_extensions if missing
+           db.run(`ALTER TABLE profile_extensions ADD COLUMN enabled INTEGER DEFAULT 1`, () => { });
 
           // Migration: Add columns to extensions if they don't exist
           db.run(`ALTER TABLE extensions ADD COLUMN version TEXT`, () => { });
@@ -305,14 +314,6 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
               system_prompt TEXT,
               is_enabled INTEGER DEFAULT 1,
               
-              -- Telegram Notifications
-              tg_token TEXT, -- Encrypted
-              tg_chat_id TEXT, -- Encrypted
-              tg_whitelist TEXT, -- Encrypted, comma-separated IDs
-              tg_notify_success INTEGER DEFAULT 1,
-              tg_notify_error INTEGER DEFAULT 1,
-              tg_notify_summary INTEGER DEFAULT 1,
-              tg_mode TEXT DEFAULT 'notify', -- 'notify', 'full'
               mcp_servers TEXT, -- JSON array
               
               updated_at INTEGER NOT NULL
@@ -320,13 +321,6 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           `);
 
           // Migration: Add Telegram columns
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_token TEXT`, () => {});
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_chat_id TEXT`, () => {});
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_whitelist TEXT`, () => {});
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_notify_success INTEGER DEFAULT 1`, () => {});
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_notify_error INTEGER DEFAULT 1`, () => {});
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_notify_summary INTEGER DEFAULT 1`, () => {});
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_mode TEXT DEFAULT 'notify'`, () => {});
           db.run(`ALTER TABLE jarvis_config ADD COLUMN mcp_servers TEXT`, () => {});
 
           // Migration: Add columns if they don't exist
@@ -405,8 +399,6 @@ export async function initializeDatabase(): Promise<sqlite3.Database> {
           `);
 
           // Update Jarvis Config for extra Telegram security
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_safe_tools TEXT`, () => {}); // JSON array of allowed tool names
-          db.run(`ALTER TABLE jarvis_config ADD COLUMN tg_requires_2fa INTEGER DEFAULT 1`, () => {});
 
           // Profile Versions table for versioning and rollback
           db.run(`
@@ -446,16 +438,7 @@ export interface JarvisConfig {
   is_enabled: boolean;
   
   // Telegram
-  tg_token?: string;
-  tg_chat_id?: string;
-  tg_whitelist?: string;
-  tg_notify_success?: number;
-  tg_notify_error?: number;
-  tg_notify_summary?: number;
-  tg_mode?: string;
   mcp_servers?: string;
-  tg_safe_tools?: string;
-  tg_requires_2fa?: number;
   
   updated_at: number;
 }
@@ -513,7 +496,8 @@ export interface Profile {
   launch_args: string | null;
   restore_tabs: number | null;
 
-  custom_data: string | null;
+   custom_data: string | null;
+   extension_ids?: string[];
 }
 
 export interface FingerprintConfig {
@@ -615,16 +599,18 @@ export interface Fingerprint {
   hardwareConcurrency: number;
 }
 
-export interface Proxy {
-  id: string;
-  name: string;
-  protocol: 'http' | 'https' | 'socks5';
-  host: string;
-  port: number;
-  username?: string;
-  password?: string;
-  created_at: number;
-}
+ export interface Proxy {
+   id: string;
+   name: string;
+   protocol: 'http' | 'https' | 'socks5';
+   host: string;
+   port: number;
+   username?: string;
+   password?: string;
+   country_code?: string;
+   created_at: number;
+   usage_count?: number;
+ }
 
 export interface Cookie {
   id: string;
@@ -745,10 +731,13 @@ export interface FingerprintData {
     filename: string;
   }>;
 
-  // Speech
+  // Speech — Sprint 2: extended with voiceURI, default, localService
   speech_voices?: Array<{
     name: string;
     lang: string;
+    voiceURI?: string;
+    default?: boolean;
+    localService?: boolean;
   }>;
 
   // Ultra Stealth Toggles

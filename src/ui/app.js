@@ -1,4 +1,4 @@
-// ===== UI Utilities =====
+﻿// ===== UI Utilities =====
 function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
@@ -82,12 +82,10 @@ function initJarvisUI() {
     }
 
     // Auto-refresh active chat session if RPA tasks are running
-    setInterval(async () => {
+    // Uses cached lastJarvisTasksData — no extra fetch needed
+    setInterval(() => {
         if (currentSection === 'jarvis' && currentJarvisSessionId) {
-            // Only refresh if there are active tasks
-            const taskRes = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
-            const taskData = await taskRes.json();
-            if (taskData.success && taskData.data.some(t => t.status === 'running' && t.parent_session_id === currentJarvisSessionId)) {
+            if (lastJarvisTasksData.some(t => t.status === 'running' && t.parent_session_id === currentJarvisSessionId)) {
                 refreshActiveSession();
             }
         }
@@ -353,19 +351,26 @@ function startStatusPolling() {
                 }
             }
 
-            // 2. Jarvis Tasks Status
-            const taskRes = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
-            const taskData = await taskRes.json();
-            if (taskData.success && taskData.data) {
-                const activeTasks = taskData.data.filter(t => t.status === 'running' || t.status === 'pending');
-                const stopBtn = document.getElementById('btn-emergency-stop');
-                if (stopBtn && activeTasks.length > 0) {
-                    stopBtn.style.display = 'flex';
-                }
-                
-                // Render mini-status in Jarvis section if active
-                if (currentSection === 'jarvis') {
-                    renderJarvisTaskStatus(taskData.data);
+            // 2. Jarvis Tasks Status — fetch only when needed (running profiles or jarvis section open)
+            // Cache result in a shared variable to avoid duplicate requests from updateJarvisBadge
+            if (runningProfiles.size > 0 || currentSection === 'jarvis') {
+                const taskRes = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
+                const taskData = await taskRes.json();
+                if (taskData.success && taskData.data) {
+                    lastJarvisTasksData = taskData.data;
+                    const activeTasks = taskData.data.filter(t => t.status === 'running' || t.status === 'pending');
+                    const stopBtn = document.getElementById('btn-emergency-stop');
+                    if (stopBtn && activeTasks.length > 0) {
+                        stopBtn.style.display = 'flex';
+                    }
+                    
+                    // Render mini-status in Jarvis section if active
+                    if (currentSection === 'jarvis') {
+                        renderJarvisTaskStatusBar(taskData.data);
+                    }
+
+                    // Update badge using cached data (no extra request)
+                    updateJarvisBadgeFromData(taskData.data);
                 }
             }
         } catch (e) {
@@ -375,9 +380,6 @@ function startStatusPolling() {
     
     poll();
     statusInterval = setInterval(poll, 3000);
-    
-    // Poll Jarvis notifications
-    setInterval(updateJarvisBadge, 10000);
 }
 
 // Emergency Stop
@@ -407,27 +409,33 @@ async function emergencyStopAll() {
 }
 
 // ===== Jarvis Notifications =====
-async function updateJarvisBadge() {
-    try {
-        const response = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
-        const data = await response.json();
-        if (data.success && data.data) {
-            // Count tasks with errors in logs or failed status
-            const failedCount = data.data.filter(t => t.status === 'failed').length;
-            
-            const badge = document.getElementById('jarvis-badge');
-            if (badge) {
-                if (failedCount > 0) {
-                    badge.textContent = failedCount;
-                    badge.style.display = 'block';
-                } else {
-                    badge.style.display = 'none';
-                }
-            }
+
+// Shared cache — populated by the main status poll, no separate fetch needed
+let lastJarvisTasksData = [];
+
+/**
+ * Update badge using cached data from the main poll.
+ * Only counts failed tasks the user has NOT dismissed.
+ */
+function updateJarvisBadgeFromData(tasks) {
+    const failedCount = tasks.filter(t =>
+        t.status === 'failed' && !dismissedJarvisTasks.has(t.id)
+    ).length;
+
+    const badge = document.getElementById('jarvis-badge');
+    if (badge) {
+        if (failedCount > 0) {
+            badge.textContent = failedCount;
+            badge.style.display = 'block';
+        } else {
+            badge.style.display = 'none';
         }
-    } catch (e) {
-        console.error('Failed to update Jarvis badge:', e);
     }
+}
+
+/** Legacy wrapper — kept in case called elsewhere, uses cached data */
+function updateJarvisBadge() {
+    updateJarvisBadgeFromData(lastJarvisTasksData);
 }
 
 // ===== Theme =====
@@ -706,11 +714,23 @@ function getGroupInfo(groupId) {
 
 // ===== Profile Actions =====
 async function startProfile(id) {
+    // Show spinner on the launch button while profile is starting
+    const btn = document.querySelector(`button[onclick="startProfile('${id}')"]`);
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i>`;
+        lucide.createIcons({ nodes: [btn] });
+    }
     try {
         const response = await fetch(`${API_URL}/v1.0/browser_profiles/${id}/start`);
         const data = await response.json();
         
         if (!response.ok || data.error) {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="play"></i>`;
+                lucide.createIcons({ nodes: [btn] });
+            }
             if (data.proxy_error) {
                 showToast(t('profiles.proxyFailed') || `Proxy connection failed: ${data.error}`, 'error');
             } else {
@@ -721,6 +741,11 @@ async function startProfile(id) {
         showToast(t('profiles.started'), 'success');
         setTimeout(loadProfiles, 1000);
     } catch (error) {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="play"></i>`;
+            lucide.createIcons({ nodes: [btn] });
+        }
         showToast(t('common.error'), 'error');
     }
 }
@@ -939,40 +964,44 @@ function renderProxies() {
         return;
     }
     
-    tbody.innerHTML = allProxies.map(proxy => {
-        const isSelected = selectedProxies.has(proxy.id);
-        return `
-            <tr data-id="${proxy.id}" class="${isSelected ? 'selected' : ''}">
-                <td><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleProxySelection('${proxy.id}', this.checked)"></td>
-                <td>${escapeHtml(proxy.name)}</td>
-                <td><span class="tag">${proxy.protocol.toUpperCase()}</span></td>
-                <td>${proxy.host}</td>
-                <td>${proxy.port}</td>
-                <td>
-                    <div class="proxy-flag-cell" title="${proxy.country_code || ''}">
-                        ${getCountryFlag(proxy.country_code)}
-                        <span class="country-code-text">${proxy.country_code || '-'}</span>
-                    </div>
-                </td>
-                <td>
-                    <div class="group-cell">
-                        ${getGroupInfo(proxy.group_id)}
-                    </div>
-                </td>
-                <td class="proxy-status-cell"><span class="status-badge active">${t('proxies.working')}</span></td>
-                <td>
-                    <div class="row-actions">
-                        <button class="btn btn-ghost btn-sm" onclick="testProxyById('${proxy.id}')" title="${t('proxies.test')}">
-                            <i data-lucide="activity"></i>
-                        </button>
-                        <button class="btn btn-ghost btn-sm" onclick="deleteProxy('${proxy.id}')" title="${t('common.delete')}">
-                            <i data-lucide="trash-2"></i>
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    }).join('');
+     tbody.innerHTML = allProxies.map(proxy => {
+         const isSelected = selectedProxies.has(proxy.id);
+         const usageCount = proxy.usage_count || 0;
+         const usageColor = usageCount === 0 ? '#34d399' : usageCount <= 2 ? '#fbbf24' : '#f87171';
+         const userPart = proxy.username ? `${proxy.username}@` : '';
+         return `
+             <tr data-id="${proxy.id}" class="${isSelected ? 'selected' : ''}">
+                 <td><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleProxySelection('${proxy.id}', this.checked)"></td>
+                 <td>${escapeHtml(userPart + proxy.host + ':' + proxy.port)}</td>
+                 <td><span class="tag">${proxy.protocol.toUpperCase()}</span></td>
+                 <td>${proxy.host}</td>
+                 <td>${proxy.port}</td>
+                 <td>
+                     <div class="proxy-flag-cell" title="${proxy.country_code || ''}">
+                         ${getCountryFlag(proxy.country_code)}
+                         <span class="country-code-text">${proxy.country_code || '-'}</span>
+                     </div>
+                 </td>
+                 <td>
+                     <div class="group-cell">
+                         ${getGroupInfo(proxy.group_id)}
+                     </div>
+                 </td>
+                 <td><span class="usage-badge" style="color:${usageColor}">${usageCount}</span></td>
+                 <td class="proxy-status-cell"><span class="status-badge active">${t('proxies.working')}</span></td>
+                 <td>
+                     <div class="row-actions">
+                         <button class="btn btn-ghost btn-sm" onclick="testProxyById('${proxy.id}')" title="${t('proxies.test')}">
+                             <i data-lucide="activity"></i>
+                         </button>
+                         <button class="btn btn-ghost btn-sm" onclick="deleteProxy('${proxy.id}')" title="${t('common.delete')}">
+                             <i data-lucide="trash-2"></i>
+                         </button>
+                     </div>
+                 </td>
+             </tr>
+         `;
+     }).join('');
     
     lucide.createIcons();
     updateProxyBulkActions();
@@ -1038,15 +1067,21 @@ async function bulkDeleteProxies() {
     }
 }
 
-function updateProxySelects() {
-    const selects = document.querySelectorAll('#profile-proxy, #edit-proxy');
-    selects.forEach(select => {
-        const currentValue = select.value;
-        select.innerHTML = `<option value="">${t('common.noProxy')}</option>` +
-            allProxies.map(p => `<option value="${p.id}">${p.name} (${p.host}:${p.port})</option>`).join('');
-        select.value = currentValue;
-    });
-}
+ function updateProxySelects() {
+     const selects = document.querySelectorAll('#profile-proxy, #edit-proxy');
+     const sortedProxies = [...allProxies].sort((a, b) => (a.usage_count || 0) - (b.usage_count || 0));
+     selects.forEach(select => {
+         const currentValue = select.value;
+         select.innerHTML = `<option value="">${t('common.noProxy')}</option>` +
+             sortedProxies.map(p => {
+                 const userPart = p.username ? `${p.username}@` : '';
+                 const label = `${userPart}${p.host}:${p.port}`;
+                 const count = p.usage_count || 0;
+                 return `<option value="${p.id}">${label} <span style="color:#888;font-size:11px">[${count} проф.]</span></option>`;
+             }).join('');
+         select.value = currentValue;
+     });
+ }
 
 // ===== Free Proxies =====
 function openFreeProxyModal() {
@@ -2132,8 +2167,15 @@ async function checkProfileProxy(profileId) {
     
     const row = document.querySelector(`tr[data-id="${profileId}"]`);
     const proxyText = row?.querySelector('.proxy-text');
-    
-    showToast(t('msg.checkingProxy') || 'Checking...', 'info');
+
+    // Show spinner on the globe button
+    const globeBtn = row?.querySelector(`button[onclick="checkProfileProxy('${profileId}')"]`);
+    if (globeBtn) {
+        globeBtn.disabled = true;
+        globeBtn.innerHTML = `<i data-lucide="loader-2" class="spin"></i>`;
+        lucide.createIcons({ nodes: [globeBtn] });
+    }
+
     try {
         const url = profile.proxy_id ? `${API_URL}/v1.0/proxies/${profile.proxy_id}/check` : `${API_URL}/v1.0/ip/check`;
         const response = await fetch(url);
@@ -2194,10 +2236,16 @@ async function checkProfileProxy(profileId) {
             }
         }
     } catch (error) {
-        console.error('Check error:', error);
         showToast(t('msg.proxyCheckError'), 'error');
         if (proxyText) {
             proxyText.style.color = 'var(--danger)';
+        }
+    } finally {
+        // Restore globe button
+        if (globeBtn) {
+            globeBtn.disabled = false;
+            globeBtn.innerHTML = `<i data-lucide="globe"></i>`;
+            lucide.createIcons({ nodes: [globeBtn] });
         }
     }
 }
@@ -2682,7 +2730,7 @@ function handleProfileGroupChange(modalType) {
     });
 }
 
-function openCreateModal() {
+ async function openCreateModal() {
     // Reset form
     document.getElementById('profile-name').value = '';
     document.getElementById('profile-tags').value = '';
@@ -2704,11 +2752,11 @@ function openCreateModal() {
         groupSelect.onchange = () => handleProfileGroupChange('create');
     }
     
-    // Load extensions and bookmarks for selection
-    renderProfileTabLists('create');
-    
-    openModal('create-modal');
-}
+     // Load extensions and bookmarks for selection
+     await renderProfileTabLists('create');
+     
+     openModal('create-modal');
+ }
 
 async function openEditModal(id) {
     const profileDataResponse = await fetch(`${API_URL}/v1.0/browser_profiles/${id}`);
@@ -3040,18 +3088,19 @@ async function createProfile() {
     showLoading(t('msg.creatingProfile') || 'Creating profile...');
     const [width, height] = document.getElementById('screen-resolution').value.split('x').map(Number);
 
-    const data = {
-        name,
-        os_type: document.getElementById('os-type').value,
-        browser_type: document.getElementById('browser-type').value,
-        group_id: document.getElementById('profile-group').value || null,
-        tags: document.getElementById('profile-tags').value,
-        notes: document.getElementById('profile-notes').value,
-        proxy_id: document.getElementById('profile-proxy').value || null,
-        start_urls: document.getElementById('start-urls').value,
-        launch_args: document.getElementById('launch-args').value,
-        restore_tabs: document.getElementById('restore-tabs').checked,
-        fingerprint_config: {
+     const data = {
+         name,
+         os_type: document.getElementById('os-type').value,
+         browser_type: document.getElementById('browser-type').value,
+         group_id: document.getElementById('profile-group').value || null,
+         tags: document.getElementById('profile-tags').value,
+         notes: document.getElementById('profile-notes').value,
+         proxy_id: document.getElementById('profile-proxy').value || null,
+         start_urls: document.getElementById('start-urls').value,
+         launch_args: document.getElementById('launch-args').value,
+         restore_tabs: document.getElementById('restore-tabs').checked,
+         extension_ids: Array.from(document.querySelectorAll('#create-modal input[name="profile-extension"]:checked')).map(cb => cb.value),
+         fingerprint_config: {
             screen: { width, height, availWidth: width, availHeight: height - 40 },
             languages: { language: document.getElementById('browser-language').value },
             canvas: { mode: document.getElementById('canvas-mode').value },
@@ -3086,26 +3135,6 @@ async function createProfile() {
         if (response.ok) {
             const result = await response.json();
             const profileId = result.data.id;
-            
-            // Assign selected extensions
-            const extensionCheckboxes = document.querySelectorAll('#create-modal input[name="profile-extension"]:checked');
-            for (const cb of extensionCheckboxes) {
-                await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/extensions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ extension_id: cb.value })
-                });
-            }
-
-            // Assign selected bookmarks
-            const bookmarkCheckboxes = document.querySelectorAll('#create-modal input[name="profile-bookmark"]:checked');
-            for (const cb of bookmarkCheckboxes) {
-                await fetch(`${API_URL}/v1.0/browser_profiles/${profileId}/bookmarks`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bookmark_id: cb.value })
-                });
-            }
 
             showToast(t('profiles.created'), 'success');
             closeModal('create-modal');
@@ -3149,19 +3178,20 @@ async function saveProfile() {
     const id = document.getElementById('edit-profile-id').value;
     const [width, height] = document.getElementById('edit-screen-resolution').value.split('x').map(Number);
     
-    const data = {
-        name: document.getElementById('edit-name').value,
-        status: document.getElementById('edit-status').value,
-        group_id: document.getElementById('edit-group').value || null,
-        proxy_id: document.getElementById('edit-proxy').value || null,
-        tags: document.getElementById('edit-tags').value,
-        notes: document.getElementById('edit-notes').value,
-        start_urls: document.getElementById('edit-start-urls').value,
-        launch_args: document.getElementById('edit-launch-args').value,
-        restore_tabs: document.getElementById('edit-restore-tabs').checked
-    };
+     const data = {
+         name: document.getElementById('edit-name').value,
+         status: document.getElementById('edit-status').value,
+         group_id: document.getElementById('edit-group').value || null,
+         proxy_id: document.getElementById('edit-proxy').value || null,
+         tags: document.getElementById('edit-tags').value,
+         notes: document.getElementById('edit-notes').value,
+         start_urls: document.getElementById('edit-start-urls').value,
+         launch_args: document.getElementById('edit-launch-args').value,
+         restore_tabs: document.getElementById('edit-restore-tabs').checked,
+         extension_ids: Array.from(document.querySelectorAll('#edit-modal input[name="profile-extension"]:checked')).map(cb => cb.value),
+     };
 
-    const fingerprintData = {
+     const fingerprintData = {
         screen: { width, height, availWidth: width, availHeight: height - 40 },
         languages: { language: document.getElementById('edit-browser-language').value },
         canvas: { mode: document.getElementById('edit-canvas-mode').value },
@@ -3185,39 +3215,20 @@ async function saveProfile() {
         }
     };
     
-    try {
-        // Save profile basic info
-        await fetch(`${API_URL}/v1.0/browser_profiles/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
+     try {
+         // Save profile basic info and extensions
+         await fetch(`${API_URL}/v1.0/browser_profiles/${id}`, {
+             method: 'PUT',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(data)
+         });
 
-        // Save fingerprint info
-        await fetch(`${API_URL}/v1.0/browser_profiles/${id}/fingerprint`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(fingerprintData)
-        });
-        
-        // Update assigned extensions
-        // Simplest way: remove all and re-add selected
-        const currentExtensionsRes = await fetch(`${API_URL}/v1.0/browser_profiles/${id}/extensions`);
-        const currentExtensionsData = await currentExtensionsRes.json();
-        if (currentExtensionsData.success) {
-            for (const ext of currentExtensionsData.data) {
-                await fetch(`${API_URL}/v1.0/browser_profiles/${id}/extensions/${ext.id}`, { method: 'DELETE' });
-            }
-        }
-
-        const extensionCheckboxes = document.querySelectorAll('#edit-modal input[name="profile-extension"]:checked');
-        for (const cb of extensionCheckboxes) {
-            await fetch(`${API_URL}/v1.0/browser_profiles/${id}/extensions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ extension_id: cb.value })
-            });
-        }
+         // Save fingerprint info
+         await fetch(`${API_URL}/v1.0/browser_profiles/${id}/fingerprint`, {
+             method: 'PUT',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(fingerprintData)
+         });
 
         // Update assigned bookmarks
         const currentBookmarksRes = await fetch(`${API_URL}/v1.0/browser_profiles/${id}/bookmarks`);
@@ -3938,9 +3949,16 @@ function searchProxies(query) {
 async function testProxyById(id) {
     const row = document.querySelector(`#proxies-tbody tr[data-id="${id}"]`);
     const statusCell = row?.querySelector('.proxy-status-cell');
+    // Show spinner on the test button
+    const testBtn = row?.querySelector(`button[onclick="testProxyById('${id}')"]`);
+    if (testBtn) {
+        testBtn.disabled = true;
+        testBtn.innerHTML = `<i data-lucide="loader-2" class="spin"></i>`;
+        lucide.createIcons({ nodes: [testBtn] });
+    }
     
     if (statusCell) {
-        statusCell.innerHTML = `<span class="status-badge warning"><i data-lucide="loader" class="spin"></i> ${t('proxies.testing')}</span>`;
+        statusCell.innerHTML = `<span class="status-badge warning"><i data-lucide="loader-2" class="spin"></i> ${t('proxies.testing')}</span>`;
         lucide.createIcons();
     }
     
@@ -3970,9 +3988,15 @@ async function testProxyById(id) {
             }
         }
     } catch (error) {
-        console.error('Proxy test error:', error);
         if (statusCell) {
             statusCell.innerHTML = `<span class="status-badge banned">${t('proxies.failed')}</span>`;
+        }
+    } finally {
+        // Restore test button
+        if (testBtn) {
+            testBtn.disabled = false;
+            testBtn.innerHTML = `<i data-lucide="activity"></i>`;
+            lucide.createIcons({ nodes: [testBtn] });
         }
     }
 }
@@ -3991,7 +4015,14 @@ async function testProxy() {
         return;
     }
     
-    showToast(t('proxies.testing'), 'info');
+    // Show spinner on Test button
+    const testBtn = document.querySelector('.modal-footer button[onclick="testProxy()"]');
+    if (testBtn) {
+        testBtn.disabled = true;
+        testBtn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> ${t('proxies.testing') || 'Testing...'}`;
+        lucide.createIcons({ nodes: [testBtn] });
+    }
+
     try {
         const response = await fetch(`${API_URL}/v1.0/proxies/check`, {
             method: 'POST',
@@ -4007,6 +4038,11 @@ async function testProxy() {
         }
     } catch (error) {
         showToast(t('msg.proxyCheckError'), 'error');
+    } finally {
+        if (testBtn) {
+            testBtn.disabled = false;
+            testBtn.innerHTML = t('proxies.test') || 'Test';
+        }
     }
 }
 
@@ -4122,10 +4158,9 @@ async function loadJarvisHistory() {
             `).join('');
         }
 
-        // Tasks now handled by status bar, but keeping list in history too for full view
-        const taskRes = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
-        const taskData = await taskRes.json();
-        if (taskData.success && taskData.data.length > 0) {
+        // Tasks list in history — use cached data, no extra fetch
+        const taskData = { data: lastJarvisTasksData };
+        if (taskData.data.length > 0) {
             html += `<div class="history-group-title" style="margin-top:10px;">${t('jarvis.recentTasks') || 'Recent Tasks'}</div>`;
             html += taskData.data.slice(0, 5).map(task => `
                 <div class="jarvis-history-item" onclick="showJarvisTaskLogs('${task.id}')">
@@ -4147,57 +4182,68 @@ async function loadJarvisHistory() {
     }
 }
 
+// IDs of task pills dismissed by the user — persisted in sessionStorage
+const dismissedJarvisTasks = new Set(
+    JSON.parse(sessionStorage.getItem('dolfpower_dismissed_tasks') || '[]')
+);
+
+function dismissJarvisTask(taskId, event) {
+    event.stopPropagation(); // don't trigger showJarvisTaskLogs
+    dismissedJarvisTasks.add(taskId);
+    sessionStorage.setItem('dolfpower_dismissed_tasks', JSON.stringify([...dismissedJarvisTasks]));
+    // Remove pill from DOM immediately without waiting for next poll
+    const pill = document.querySelector(`.jarvis-task-pill[data-task-id="${taskId}"]`);
+    if (pill) pill.remove();
+    // Immediately update badge — no fetch needed, reuse cached data
+    updateJarvisBadge();
+}
+
 async function refreshJarvisTaskStatusBar() {
+    // When called without args (e.g. on section switch), use cached data
+    renderJarvisTaskStatusBar(lastJarvisTasksData);
+}
+
+function renderJarvisTaskStatusBar(tasks) {
     const bar = document.getElementById('jarvis-task-status-bar');
     if (!bar) return;
 
-    try {
-        const response = await fetch(`${API_URL}/v1.0/jarvis/tasks`);
-        const data = await response.json();
+    let html = `
+        <div class="jarvis-task-pill" onclick="openJarvisConfig()" style="border-color: var(--primary); background: rgba(59, 130, 246, 0.1); flex-shrink: 0;">
+            <i data-lucide="settings" style="width: 14px; height: 14px;"></i>
+            <span data-i18n="jarvis.connectBtn">Connect</span>
+        </div>
+        <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px; flex-shrink: 0;"></div>
+    `;
 
-        if (data.success) {
-            let html = `
-                <div class="jarvis-task-pill" onclick="openJarvisConfig()" style="border-color: var(--primary); background: rgba(59, 130, 246, 0.1); flex-shrink: 0;">
-                    <i data-lucide="settings" style="width: 14px; height: 14px;"></i>
-                    <span data-i18n="jarvis.connectBtn">Connect</span>
+    const visibleTasks = tasks.filter(task => !dismissedJarvisTasks.has(task.id));
+
+    if (visibleTasks.length === 0) {
+        html += `<div style="color: var(--text-muted); font-size: 11px; padding-left: 10px;">${t('jarvis.noActiveTasks') || 'No active tasks'}</div>`;
+    } else {
+        html += visibleTasks.map(task => {
+            let statusClass = 'status-pending';
+            if (task.status === 'running')   statusClass = 'status-running';
+            if (task.status === 'failed')    statusClass = 'status-failed';
+            if (task.status === 'completed') statusClass = 'status-completed';
+
+            return `
+                <div class="jarvis-task-pill ${statusClass}" data-task-id="${task.id}" onclick="showJarvisTaskLogs('${task.id}')">
+                    <div class="task-dot"></div>
+                    <span>${escapeHtml(task.name)}</span>
+                    <button class="jarvis-task-dismiss" onclick="dismissJarvisTask('${task.id}', event)" title="Dismiss">
+                        <i data-lucide="x"></i>
+                    </button>
                 </div>
-                <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px; flex-shrink: 0;"></div>
             `;
-
-            if (data.data.length === 0) {
-                html += `<div style="color: var(--text-muted); font-size: 11px; padding-left: 10px;">${t('jarvis.noActiveTasks') || 'No active tasks'}</div>`;
-                bar.innerHTML = html;
-            } else {
-                html += data.data.map(task => {
-                    let statusClass = 'status-pending';
-                    if (task.status === 'running') statusClass = 'status-running';
-                    if (task.status === 'failed') statusClass = 'status-failed';
-                    if (task.status === 'completed') statusClass = 'status-completed';
-
-                    return `
-                        <div class="jarvis-task-pill ${statusClass}" onclick="showJarvisTaskLogs('${task.id}')">
-                            <div class="task-dot"></div>
-                            <span>${escapeHtml(task.name)}</span>
-                        </div>
-                    `;
-                }).join('');
-                bar.innerHTML = html;
-            }
-            
-            applyTranslations(); // Translate the "Connect" button
-            lucide.createIcons();
-        }
-    } catch (e) {
-        console.error('Failed to refresh tasks:', e);
+        }).join('');
     }
+
+    bar.innerHTML = html;
+    applyTranslations();
+    lucide.createIcons();
 }
 
-// Auto-refresh tasks every 5 seconds if in Jarvis section
-setInterval(() => {
-    if (currentSection === 'jarvis') {
-        refreshJarvisTaskStatusBar();
-    }
-}, 5000);
+// Tasks are refreshed via the main status poll (every 3s when jarvis section is active)
 
 async function showJarvisTaskLogs(taskId) {
     currentTaskLogsId = taskId;
@@ -4915,30 +4961,7 @@ function toggleJarvisProviderFields() {
     }
 }
 
-function toggleTgSecurityFields() {
-    const mode = document.getElementById('jarvis-tg-mode').value;
-    document.getElementById('tg-security-fields').style.display = mode === 'full' ? 'block' : 'none';
-}
-
-function populateTgToolsList(selectedTools = []) {
-    const container = document.getElementById('tg-tools-list');
-    const availableTools = [
-        'listProfiles', 'getProfile', 'startProfile', 'stopProfile', 
-        'listProxies', 'createProxy', 'deleteProxy', 
-        'createProfile', 'updateProfile', 'bulkCreateProfiles', 'deleteProfile',
-        'listGroups', 'runRpa', 'installExtension', 'startRecording', 'stopRecording'
-    ];
-
-    container.innerHTML = availableTools.map(tool => `
-        <label class="checkbox-label" style="font-size: 11px;">
-            <input type="checkbox" name="tg-safe-tool" value="${tool}" ${selectedTools.includes(tool) ? 'checked' : ''}>
-            <span>${tool}</span>
-        </label>
-    `).join('');
-}
-
 function openJarvisConfig() {
-    console.log('Opening Jarvis Config Modal');
     if (jarvisConfig) {
         const setVal = (id, val) => {
             const el = document.getElementById(id);
@@ -4951,53 +4974,22 @@ function openJarvisConfig() {
 
         setVal('jarvis-provider', jarvisConfig.provider);
         setVal('jarvis-api-url', jarvisConfig.api_url);
-        setVal('jarvis-api-key', jarvisConfig.api_key || ''); 
+        setVal('jarvis-api-key', jarvisConfig.api_key || '');
         setVal('jarvis-model-name', jarvisConfig.model_name);
         setVal('jarvis-system-prompt', jarvisConfig.system_prompt);
         setChecked('jarvis-enabled', jarvisConfig.is_enabled === 1);
         setVal('jarvis-permission-level', jarvisConfig.permission_level);
-        
+
         const mcpEl = document.getElementById('jarvis-mcp-servers');
         if (mcpEl) mcpEl.value = jarvisConfig.mcp_servers ? JSON.parse(jarvisConfig.mcp_servers).join('\n') : '';
-
-        setVal('jarvis-tg-token', jarvisConfig.tg_token || '');
-        setVal('jarvis-tg-chat-id', jarvisConfig.tg_chat_id || ''); 
-        
-        // Removed EncryptionService call which caused frontend crash
-        const whitelist = jarvisConfig.tg_whitelist || '';
-        setVal('jarvis-tg-whitelist', whitelist);
-        
-        setChecked('jarvis-tg-notify-success', jarvisConfig.tg_notify_success === 1);
-        setChecked('jarvis-tg-notify-error', jarvisConfig.tg_notify_error === 1);
-        setChecked('jarvis-tg-notify-summary', jarvisConfig.tg_notify_summary === 1);
-        
-        const modeEl = document.getElementById('jarvis-tg-mode');
-        if (modeEl) {
-            modeEl.value = jarvisConfig.tg_mode || 'notify';
-            const safeTools = jarvisConfig.tg_safe_tools ? JSON.parse(jarvisConfig.tg_safe_tools) : ['listProfiles', 'listProxies', 'getProfile', 'startProfile', 'stopProfile', 'listGroups'];
-            populateTgToolsList(safeTools);
-            setChecked('jarvis-tg-requires-2fa', jarvisConfig.tg_requires_2fa !== 0);
-            toggleTgSecurityFields();
-        }
-
-        const whitelistEl = document.getElementById('jarvis-tg-whitelist');
-        const warningEl = document.getElementById('tg-whitelist-warning');
-        if (whitelistEl && warningEl) {
-            const updateWhitelistWarning = () => {
-                const val = whitelistEl.value.trim();
-                warningEl.style.display = val ? 'none' : 'flex';
-            };
-            whitelistEl.oninput = updateWhitelistWarning;
-            updateWhitelistWarning();
-        }
 
         const select = document.getElementById('jarvis-master-profile');
         if (select) {
             const currentVal = jarvisConfig.master_profile_id;
-            select.innerHTML = `<option value="">${t('jarvis.noProfileSelected') || 'No Profile Selected'}</option>` + 
+            select.innerHTML = `<option value="">${t('jarvis.noProfileSelected') || 'No Profile Selected'}</option>` +
                 allProfiles.map(p => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
         }
-            
+
         toggleJarvisProviderFields();
     }
     openModal('jarvis-config-modal');
@@ -5013,8 +5005,6 @@ async function saveJarvisConfig() {
         return el ? (el.checked ? 1 : 0) : 0;
     };
 
-    const safeTools = Array.from(document.querySelectorAll('input[name="tg-safe-tool"]:checked')).map(cb => cb.value);
-    
     const config = {
         provider: getVal('jarvis-provider'),
         api_url: getVal('jarvis-api-url'),
@@ -5025,17 +5015,6 @@ async function saveJarvisConfig() {
         system_prompt: getVal('jarvis-system-prompt'),
         is_enabled: getChecked('jarvis-enabled'),
         mcp_servers: JSON.stringify(getVal('jarvis-mcp-servers').split('\n').map(s => s.trim()).filter(s => s)),
-        
-        // Telegram
-        tg_token: getVal('jarvis-tg-token'),
-        tg_chat_id: getVal('jarvis-tg-chat-id') === '********' ? undefined : getVal('jarvis-tg-chat-id'),
-        tg_whitelist: getVal('jarvis-tg-whitelist'),
-        tg_notify_success: getChecked('jarvis-tg-notify-success'),
-        tg_notify_error: getChecked('jarvis-tg-notify-error'),
-        tg_notify_summary: getChecked('jarvis-tg-notify-summary'),
-        tg_mode: getVal('jarvis-tg-mode'),
-        tg_safe_tools: JSON.stringify(safeTools),
-        tg_requires_2fa: getChecked('jarvis-tg-requires-2fa')
     };
 
     try {
@@ -5085,28 +5064,6 @@ async function launchJarvisMasterProfile() {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
         lucide.createIcons();
-    }
-}
-
-async function testJarvisTelegram() {
-    const token = document.getElementById('jarvis-tg-token').value;
-    const chatId = document.getElementById('jarvis-tg-chat-id').value;
-    
-    showToast(t('proxies.testing'), 'info');
-    try {
-        const response = await fetch(`${API_URL}/v1.0/jarvis/tg-test`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token, chatId: chatId === '********' ? undefined : chatId })
-        });
-        const data = await response.json();
-        if (data.success) {
-            showToast(t('common.success'), 'success');
-        } else {
-            showToast(data.error || t('common.error'), 'error');
-        }
-    } catch (e) {
-        showToast(e.message, 'error');
     }
 }
 

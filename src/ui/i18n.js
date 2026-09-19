@@ -1,4 +1,4 @@
-// ===== Internationalization =====
+﻿// ===== Internationalization =====
 const translations = {
     en: {
         // Navigation
@@ -32,8 +32,6 @@ const translations = {
         'jarvis.systemPromptHint': 'Extra instructions to be added to the base system prompt...',
         'jarvis.mcpServers': 'MCP Servers (URL per line)',
         'jarvis.enabled': 'Enable Jarvis AI Features',
-        'jarvis.tgSafeTools': 'Safe Tools (Auto-approved)',
-        'jarvis.tgRequires2fa': 'Require 2FA PIN for sensitive actions',
         'jarvis.webhookUrl': 'Zapier / Make Webhook URL',
         'jarvis.webhookHint': 'Use this URL to trigger DolfPower actions from external services. Key is auto-filled from API Key.',
         'jarvis.noProfileSelected': 'No Profile Selected',
@@ -89,16 +87,8 @@ const translations = {
         'jarvis.actionFailed': 'Action failed: {error}',
         'jarvis.confirmBtn': 'Confirm Action',
         'jarvis.cancelBtn': 'Cancel',
-        'jarvis.tgTitle': 'Telegram Notifications',
-        'jarvis.tgToken': 'Bot Token',
-        'jarvis.tgChatId': 'Chat ID',
-        'jarvis.tgWhitelist': 'White-list IDs (comma separated)',
-        'jarvis.tgSuccess': 'Success',
         'jarvis.maxScreenshots': 'Max 3 screenshots allowed',
         'jarvis.applyBookmarks': 'Apply to Profiles',
-        'jarvis.tgError': 'Errors',
-        'jarvis.tgSummary': 'Summary',
-        'jarvis.tgTest': 'Test Notification',
         
         // Groups
         'groups.title': 'Profile Groups',
@@ -191,9 +181,10 @@ const translations = {
         'filter.suspended': 'Suspended',
         
         // Table
-        'table.name': 'Name',
-        'table.proxy': 'Proxy',
-        'table.status': 'Status',
+         'table.name': 'Name',
+         'table.proxy': 'Proxy',
+         'table.usage': 'Usage',
+         'table.status': 'Status',
         'table.lastOpen': 'Last Open',
         'table.notes': 'Notes',
         'table.actions': 'Actions',
@@ -417,6 +408,7 @@ const translations = {
         'common.success': 'Success',
         'common.error': 'Error',
         'common.never': 'Never',
+        'common.allGroups': 'All Groups',
         'common.noProxy': 'No Proxy',
         'common.noGroup': 'No Group',
         'common.direct': 'Direct',
@@ -507,8 +499,6 @@ const translations = {
         'jarvis.systemPromptHint': 'Дополнительные инструкции, которые будут добавлены к базовому системному промпту...',
         'jarvis.mcpServers': 'MCP Серверы (URL на строку)',
         'jarvis.enabled': 'Включить функции AI',
-        'jarvis.tgSafeTools': 'Безопасные инструменты (Авто-одобрение)',
-        'jarvis.tgRequires2fa': 'Требовать 2FA PIN для чувствительных действий',
         'jarvis.webhookUrl': 'Zapier / Make Webhook URL',
         'jarvis.webhookHint': 'Используйте этот URL для запуска действий DolfPower из внешних сервисов. Ключ заполняется автоматически из API ключа.',
         'jarvis.noProfileSelected': 'Профиль не выбран',
@@ -560,16 +550,8 @@ const translations = {
         'jarvis.actionFailed': 'Ошибка выполнения: {error}',
         'jarvis.confirmBtn': 'Подтвердить действие',
         'jarvis.cancelBtn': 'Отмена',
-        'jarvis.tgTitle': 'Telegram Уведомления',
-        'jarvis.tgToken': 'Токен бота',
-        'jarvis.tgChatId': 'Chat ID',
-        'jarvis.tgWhitelist': 'Белый список ID (через запятую)',
-        'jarvis.tgSuccess': 'Успех',
         'jarvis.maxScreenshots': 'Максимум 3 скриншота',
         'jarvis.applyBookmarks': 'Применить к профилям',
-        'jarvis.tgError': 'Ошибки',
-        'jarvis.tgSummary': 'Итог',
-        'jarvis.tgTest': 'Проверить бота',
         
         // Groups
         'groups.title': 'Группы профилей',
@@ -661,9 +643,10 @@ const translations = {
         'filter.suspended': 'Приостановлен',
         
         // Table
-        'table.name': 'Имя',
-        'table.proxy': 'Прокси',
-        'table.status': 'Статус',
+         'table.name': 'Имя',
+         'table.proxy': 'Прокси',
+         'table.usage': 'Использ.',
+         'table.status': 'Статус',
         'table.lastOpen': 'Последний запуск',
         'table.notes': 'Заметки',
         'table.actions': 'Действия',
@@ -882,6 +865,7 @@ const translations = {
         'common.success': 'Успешно',
         'common.error': 'Ошибка',
         'common.never': 'Никогда',
+        'common.allGroups': 'Все группы',
         'common.noProxy': 'Без прокси',
         'common.noGroup': 'Без группы',
         'common.direct': 'Напрямую',

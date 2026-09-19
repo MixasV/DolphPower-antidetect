@@ -426,60 +426,6 @@
                 <label>MCP Servers (One per line)</label>
                 <textarea id="jarvis-mcp-servers" rows="2" placeholder="http://localhost:3000/mcp"></textarea>
             </div>
-            <div class="divider"></div>
-            <h3 data-i18n="jarvis.tgTitle" style="font-size: 14px; margin-bottom: 10px;">Telegram Settings</h3>
-            <div class="form-group">
-                <label data-i18n="jarvis.tgToken">Bot Token</label>
-                <input type="password" id="jarvis-tg-token" placeholder="123456:ABC-DEF...">
-            </div>
-            <div class="form-group">
-                <label data-i18n="jarvis.tgChatId">Chat ID</label>
-                <input type="text" id="jarvis-tg-chat-id" placeholder="Your Chat ID">
-            </div>
-            <div class="form-group">
-                <label data-i18n="jarvis.tgWhitelist">White-list IDs (comma separated)</label>
-                <input type="text" id="jarvis-tg-whitelist" placeholder="12345, 67890">
-                <small class="help-text warning-text" id="tg-whitelist-warning" style="color: var(--warning); display: none;">
-                    <i data-lucide="alert-triangle" style="width: 12px; height: 12px;"></i>
-                    Attention: If whitelist is empty, any user can receive notifications!
-                </small>
-            </div>
-            <div class="form-group">
-                <label>Bot Permissions</label>
-                <select id="jarvis-tg-mode" onchange="toggleTgSecurityFields()">
-                    <option value="notify">Notifications Only</option>
-                    <option value="full">Notifications & Commands</option>
-                </select>
-            </div>
-            <div id="tg-security-fields" style="display: none; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 15px;">
-                <div class="form-group">
-                    <label>Allowed Tools via Telegram</label>
-                    <div id="tg-tools-list" class="checkbox-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; max-height: 120px; overflow-y: auto; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 4px;">
-                        <!-- Populated via JS -->
-                    </div>
-                    <small class="help-text">Only checked tools can be executed via Telegram.</small>
-                </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="jarvis-tg-requires-2fa" checked>
-                        <span>Require 2FA for active commands</span>
-                    </label>
-                </div>
-            </div>
-            <div class="form-row" style="margin-top: 10px;">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="jarvis-tg-notify-success" checked>
-                    <span data-i18n="jarvis.tgSuccess">Success</span>
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="jarvis-tg-notify-error" checked>
-                    <span data-i18n="jarvis.tgError">Errors</span>
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="jarvis-tg-notify-summary" checked>
-                    <span data-i18n="jarvis.tgSummary">Summary</span>
-                </label>
-            </div>
             <div class="form-group">
                 <label class="checkbox-label">
                     <input type="checkbox" id="jarvis-enabled" checked>
@@ -562,4 +508,4 @@
         </div>
     </div>
 </div>
-
+

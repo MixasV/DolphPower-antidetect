@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 import { EncryptionService } from './encryption-service';
 import { JarvisConfig, JarvisSession } from '../database/schema';
 import { MCPManager } from './mcp-manager';
@@ -108,16 +108,13 @@ Available Tools:
 - deleteProxy: { id: "string" } -> Deletes a proxy.
 - listGroups: {} -> Returns list of profile groups.
 - runRpa: { scenarioId: "string", profileId?: "string", profileIds?: string[], taskName: "string", scheduledAt?: number, repeatInterval?: number, silent?: boolean } -> Starts a scenario on one or many profiles. 
-- testRpa: { scenarioId: "string", profileId: "string", scenarioName: "string" } -> Special tool for debugging. ALWAYS use this for the first run of a new script. It runs in a visible window, enables detailed logging, captures screenshots after each step, and is SILENT (no Telegram spam).
+- testRpa: { scenarioId: "string", profileId: "string", scenarioName: "string" } -> Special tool for debugging. ALWAYS use this for the first run of a new script. It runs in a visible window, enables detailed logging, captures screenshots after each step.
 - stopAllTasks: {} -> Mismatched name fix: Use this if user says "Stop", "Cancel", "Прекрати". It kills all active tasks AND closes all running browsers.
 - installExtension: { extensionId: "string", profileId?: "string", profileIds?: string[] } -> Installs extension to one or many profiles.
 - startRecording: { profileId: "string" } -> Starts/Resumes action recording on a profile.
 - stopRecording: {} -> Stops current recording and returns analyzed steps.
-- updateConfig: { tgToken?: string, tgChatId?: string, tgNotifySuccess?: boolean, tgNotifyError?: boolean, tgNotifySummary?: boolean } -> Updates Jarvis system configuration, including Telegram settings.
+- updateConfig: {} -> Updates Jarvis system configuration.
 ${mcpDescription}
-
-Telegram Notifications:
-You can help user configure Telegram notifications. If they provide a token or chat ID, you can use updateConfig logic (via user instructions) or just explain how to set it in settings. You are aware that the system can send real-time notifications about task start, errors, and summary results to a Telegram bot. All TG data and task logs are encrypted in the database.
 
 Guidelines:
 - [CRITICAL] PAGE ANALYSIS: Before performing actions on a new page, use 'getText' or wait for key selectors to ensure the page has loaded correctly. If you're unsure where to click, ask for 'HTML Context' (if available in overlay) or take a screenshot via 'testRpa'.
@@ -152,24 +149,16 @@ IMPORTANT RULES:
     return basePrompt;
   }
 
-  async askJarvis(query: string, history: any[] = [], attachedFiles: string[] = [], pageContext?: { url: string, title: string, html?: string }, source: 'ui' | 'telegram' = 'ui'): Promise<string> {
+  async askJarvis(query: string, history: any[] = [], attachedFiles: string[] = [], pageContext?: { url: string, title: string, html?: string }): Promise<string> {
     try {
       const systemReminder = await this.getSystemReminder();
       let systemPrompt = await this.getSystemPrompt();
 
-      // Security: File access restriction for Telegram
-      if (source === 'telegram') {
-        systemPrompt += `\n\n[SECURITY RESTRICTION] You are currently operating via Telegram. 
-File access tools and the {{FILE:...}} syntax are STRICTLY DISABLED for this channel. 
-Do NOT attempt to read local files or provide their content. 
-If user asks for file data, explain that this requires direct access via the browser UI for safety.`;
-      } else {
-        // Add information about attached files to the context (UI only)
-        if (attachedFiles && attachedFiles.length > 0) {
-          systemPrompt += `\n\nAttached Files Available for this Session:
-${attachedFiles.map((f, i) => `${i + 1}. ${f}`).join('\n')}
-You can use these files in RPA scripts using {{FILE:path|line:INDEX}} syntax.`;
-        }
+      // Add information about attached files to the context
+      if (attachedFiles && attachedFiles.length > 0) {
+        systemPrompt += `\n\nAttached Files Available for this Session:\n` +
+          attachedFiles.map((f, i) => `${i + 1}. ${f}`).join('\n') +
+          `\nYou can use these files in RPA scripts using {{FILE:path|line:INDEX}} syntax.`;
       }
 
       // Add page context if provided (from Overlay)

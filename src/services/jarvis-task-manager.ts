@@ -1,9 +1,8 @@
-import { Database } from 'sqlite3';
+﻿import { Database } from 'sqlite3';
 import { ChromiumManager } from './chromium-manager';
 import { RPAEngine } from './rpa-engine';
 import { ProfileManager } from './profile-manager';
 import { ResourceMonitor } from './resource-monitor';
-import { TelegramService } from './telegram-service';
 import { EncryptionService } from './encryption-service';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -38,7 +37,6 @@ interface ActiveTask {
 
 export class JarvisTaskManager {
     private isRunning = false;
-    private telegramService: TelegramService;
     private activeTasks: Map<string, ActiveTask> = new Map();
     private globalConcurrency: number = 5;
 
@@ -48,19 +46,7 @@ export class JarvisTaskManager {
         private rpaEngine: RPAEngine,
         private profileManager: ProfileManager
     ) {
-        this.telegramService = new TelegramService();
         this.globalConcurrency = ResourceMonitor.calculateOptimalConcurrency(true);
-    }
-
-    private async refreshTGConfig() {
-        return new Promise<void>((resolve) => {
-            this.db.get('SELECT * FROM jarvis_config WHERE id = 1', (err, row: any) => {
-                if (row) {
-                    this.telegramService.updateConfig(row);
-                }
-                resolve();
-            });
-        });
     }
 
     async createTask(name: string, scriptId: string, profileIds: string[], options: { scheduledAt?: number | null, repeatInterval?: number, cronExpression?: string | null, silent?: boolean, allowedPaths?: string[], sessionId?: string } = {}): Promise<string> {
@@ -107,7 +93,6 @@ export class JarvisTaskManager {
         this.isRunning = true;
 
         try {
-            await this.refreshTGConfig();
             
             // 1. Pick up new tasks that are due
             const dueTasks = await this.getDueTasks();
@@ -155,7 +140,6 @@ export class JarvisTaskManager {
                     
                     // Only notify TG if NOT silent
                     if (!task.silent) {
-                        await this.telegramService.notifyTaskStarted(task.name, task.profile_ids.length, !!task.silent);
                     }
         }
     }
@@ -168,7 +152,6 @@ export class JarvisTaskManager {
         if (active.failedCount > 3 && active.completedCount === 0 && active.runningCount === 0 && active.remainingProfileIds.length > 0) {
              console.warn(`[JarvisTaskManager] Task ${taskId} is failing consistently. Stopping to prevent spam.`);
              await this.stopTask(taskId);
-             await this.telegramService.sendMessage(`⚠️ <b>Task Aborted</b>\n\nTask "${active.task.name}" was aborted after multiple consecutive failures to prevent spam.`);
         }
     }
 
@@ -264,16 +247,20 @@ export class JarvisTaskManager {
                         }
                     }
 
-                    const launchInfo = await this.chromiumManager.launchProfile(profileId, profileData.profile.user_data_dir, launchOptions);
-                    devToolsPort = launchInfo.devToolsPort;
-                    autoClosed = true;
+const launchInfo = await this.chromiumManager.launchProfile(profileId, profileData.profile.user_data_dir, launchOptions);
+                     devToolsPort = launchInfo.devToolsPort;
+                     autoClosed = true;
 
-                    // Apply Fingerprint via CDP
-                    if (devToolsPort) {
-                        await this.chromiumManager.applyFingerprintViaCDP(profileId, devToolsPort, profileData.fingerprint);
-                        // Unlock tunnel (which was started blocked for safety)
-                        await this.chromiumManager.unlockProfile(profileId);
-                    }
+// Get fingerprint adjusted for proxy (context-specific)
+                      const fpToUse = await this.chromiumManager.getContextFingerprint(profileId, launchInfo.contextId!)
+                          ?? profileData.fingerprint;
+
+                     // Apply Fingerprint via CDP
+if (devToolsPort) {
+                           await this.chromiumManager.applyFingerprintViaCDP(profileId, devToolsPort, fpToUse, undefined, { restoreTabs: launchOptions.restoreTabs, contextId: launchInfo.contextId! });
+                           // Unlock tunnel (which was started blocked for safety)
+                           await this.chromiumManager.unlockProfile(profileId);
+                       }
                     
                     // Wait for browser to initialize
                     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -338,7 +325,6 @@ export class JarvisTaskManager {
             activeTask.failedCount++;
             activeTask.lastErrors.push(`${profileId}: ${err.message}`);
             // Silenced to avoid spam, summary will be sent at the end
-            // await this.telegramService.notifyProfileError(task.name, profileId, err.message);
         }
     }
 
@@ -358,7 +344,6 @@ export class JarvisTaskManager {
 
             // Only notify TG if NOT silent
             if (!task.silent) {
-                await this.telegramService.notifyTaskCompleted(task.name, activeTask.completedCount, activeTask.failedCount, activeTask.lastErrors, activeTask.silent);
             }
             
             // Handle repetition - Only reschedule if at least one profile succeeded or it's a scheduled task

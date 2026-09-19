@@ -1,6 +1,6 @@
 {
   "name": "dolfpower",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "DolfPower - Free AntiDetect Browser with Extensions, 2FA, IP Checker, Import/Export",
   "main": "dist/electron/main.js",
   "scripts": {
