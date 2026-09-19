@@ -6,8 +6,22 @@ on:
       - 'v*'
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            build_cmd: "npx tsc && xcopy src\\ui dist\\ui /E /I /Y && xcopy resources dist\\resources /E /I /Y && npx electron-builder --win --publish never"
+          - os: ubuntu-latest
+            platform: linux
+            build_cmd: "npx tsc && cp -r src/ui dist/ui && cp -r resources dist/resources && npx electron-builder --linux --publish never"
+          - os: macos-latest
+            platform: mac
+            build_cmd: "npx tsc && cp -r src/ui dist/ui && cp -r resources dist/resources && npx electron-builder --mac --publish never"
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,26 +35,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build TypeScript
-        run: npx tsc
-
-      - name: Copy UI files
-        run: |
-          xcopy src\ui dist\ui /E /I /Y
-          xcopy resources dist\resources /E /I /Y
-
-      - name: Build Windows installer
-        run: npx electron-builder --win --publish never
+      - name: Build
+        run: ${{ matrix.build_cmd }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload artifacts to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/*.exe
-            release/*.yml
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.zip
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

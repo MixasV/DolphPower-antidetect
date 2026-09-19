@@ -11,8 +11,9 @@
     "test": "jest",
     "start": "npm run build && electron .",
     "server": "npm run build && node dist/server/index.js",
-    "dist": "npm run build && electron-builder --win",
-    "dist:dir": "npm run build && electron-builder --win --dir"
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build:linux && electron-builder --linux --publish never",
+    "dist:mac": "npm run build:linux && electron-builder --mac --publish never"
   },
   "keywords": [
     "antidetect",
@@ -47,14 +48,8 @@
     ],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
       ],
       "icon": "resources/app_icon.png"
     },
@@ -67,6 +62,25 @@
     },
     "portable": {
       "artifactName": "DolfPower-${version}-portable.exe"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "resources/app_icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "dmg": {
+      "artifactName": "DolfPower-${version}-${arch}.dmg"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb",      "arch": ["x64"] }
+      ],
+      "icon": "resources/app_icon.png",
+      "category": "Utility"
     }
   },
   "dependencies": {
