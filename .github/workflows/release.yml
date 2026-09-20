@@ -8,17 +8,15 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             platform: win
-            build_cmd: "npx tsc && xcopy src\\ui dist\\ui /E /I /Y && xcopy resources dist\\resources /E /I /Y && npx electron-builder --win --publish never"
           - os: ubuntu-latest
             platform: linux
-            build_cmd: "npx tsc && cp -r src/ui dist/ui && cp -r resources dist/resources && npx electron-builder --linux --publish never"
           - os: macos-latest
             platform: mac
-            build_cmd: "npx tsc && cp -r src/ui dist/ui && cp -r resources dist/resources && npx electron-builder --mac --publish never"
 
     runs-on: ${{ matrix.os }}
 
@@ -32,14 +30,50 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Install Python setuptools (macOS/Linux — fixes distutils for node-gyp)
+        if: runner.os != 'Windows'
+        run: pip3 install setuptools || true
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: ${{ matrix.build_cmd }}
+      - name: Rebuild native modules for Electron
+        run: npx electron-rebuild --force
+        env:
+          npm_config_build_from_source: true
+
+      - name: Compile TypeScript (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          npx tsc
+          xcopy src\ui dist\ui /E /I /Y
+          xcopy resources dist\resources /E /I /Y
+
+      - name: Compile TypeScript (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          npx tsc
+          cp -r src/ui dist/ui
+          cp -r resources dist/resources
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build macOS
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build Linux
+        if: runner.os == 'Linux'
+        run: npx electron-builder --linux --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts to Release
         uses: softprops/action-gh-release@v2
@@ -49,7 +83,6 @@ jobs:
             release/*.dmg
             release/*.AppImage
             release/*.deb
-            release/*.rpm
             release/*.zip
           draft: false
           prerelease: false
