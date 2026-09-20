@@ -21,7 +21,7 @@
     "automation",
     "fingerprint"
   ],
-  "author": "",
+  "author": "DolfPower Team <support@dolfpower.com>",
   "license": "MIT",
   "build": {
     "appId": "com.dolfpower.antidetect",
@@ -81,7 +81,8 @@
         { "target": "deb",      "arch": ["x64"] }
       ],
       "icon": "resources/app_icon.png",
-      "category": "Utility"
+      "category": "Utility",
+      "maintainer": "DolfPower Team <support@dolfpower.com>"
     }
   },
   "dependencies": {
