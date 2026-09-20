@@ -4,6 +4,23 @@ import os from 'os';
 import fs from 'fs/promises';
 import { Database } from 'sqlite3';
 import { Profile, FingerprintConfig, FingerprintData } from '../database/schema';
+
+export interface CreateProfileOptions {
+    proxyId?: string;
+    template?: string;
+    browserType?: string;
+    browserVersion?: string;
+    osType?: string;
+    osVersion?: string;
+    groupId?: string;
+    notes?: string;
+    tags?: string;
+    status?: string;
+    startUrls?: string;
+    launchArgs?: string;
+    fingerprintConfig?: Partial<FingerprintData>;
+    extensionIds?: string[];
+}
 import { FingerprintGenerator } from './fingerprint-generator';
 
 const PROFILES_DIR = path.join(os.homedir(), '.antidetect', 'profiles');
@@ -14,24 +31,10 @@ export class ProfileManager {
     /**
      * Create a new browser profile with complete fingerprint configuration
      */
-    async createProfile(
-        name: string,
-        options: {
-            proxyId?: string;
-            template?: string;
-            browserType?: string;
-            browserVersion?: string;
-            osType?: string;
-            osVersion?: string;
-            groupId?: string;
-            notes?: string;
-            tags?: string;
-            status?: string;
-            startUrls?: string;
-            launchArgs?: string;
-            fingerprintConfig?: Partial<FingerprintData>;
-        } = {}
-    ): Promise<Profile> {
+     async createProfile(
+         name: string,
+         options: CreateProfileOptions = {}
+     ): Promise<Profile> {
         const id = uuidv4();
         const created_at = Date.now();
         const fingerprint_seed = uuidv4();
@@ -51,20 +54,19 @@ export class ProfileManager {
         let safeConfig = options.fingerprintConfig ? { ...options.fingerprintConfig } : {};
         if (safeConfig.timezone) delete safeConfig.timezone;
 
-        // Screen resolution limit - cap to current screen resolution
-        let maxScreenWidth = 3840, maxScreenHeight = 2160;
-        try {
-            const { execSync } = require('child_process');
-            if (process.platform === 'win32') {
-                // Get screen resolution using .NET
-                const output = execSync('powershell "(Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Where-Object {$_.Primary -eq $true} | Select-Object -ExpandProperty Bounds | ForEach-Object {\"$($_.Width) $($_.Height)\" })"', { encoding: 'utf8' });
-                const match = output.trim().match(/(\d+)\s+(\d+)/);
-                if (match) {
-                    maxScreenWidth = parseInt(match[1]);
-                    maxScreenHeight = parseInt(match[2]);
-                }
-            }
-        } catch (e) { /* Use defaults */ }
+         // Screen resolution limit - cap to current screen resolution
+         let maxScreenWidth = 3840, maxScreenHeight = 2160;
+         try {
+             const { execSync } = require('child_process');
+             if (process.platform === 'win32') {
+                  const output = execSync('powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | Where-Object {$_.Primary -eq $true} | Select-Object -ExpandProperty Bounds | ForEach-Object { $_.Width; $_.Height }"', { encoding: 'utf8' });
+                 const lines = output.trim().split('\n').map(Number);
+                 if (lines.length >= 2 && !isNaN(lines[0]) && !isNaN(lines[1])) {
+                     maxScreenWidth = lines[0];
+                     maxScreenHeight = lines[1];
+                 }
+             }
+         } catch (e) { /* Use defaults */ }
         if (safeConfig.screen) {
             if (safeConfig.screen.width && safeConfig.screen.width > maxScreenWidth) {
                 safeConfig.screen.width = maxScreenWidth;
@@ -134,26 +136,41 @@ export class ProfileManager {
                         // Create fingerprint configuration
                         this.createFingerprintConfig(id, finalFingerprint)
                             .then(async () => {
-                                // AUTO-ASSIGN EXTENSIONS AND BOOKMARKS BASED ON GROUP (only if not explicitly provided)
-                                try {
-                                    // 1. Extensions
-                                    const extensions: any[] = await new Promise((res) => {
-                                        this.db.all('SELECT id FROM extensions WHERE group_id IS NULL OR group_id = ?', [options.groupId], (err, rows) => res(rows || []));
-                                    });
-                                    for (const ext of extensions) {
-                                        await new Promise((res) => this.db.run('INSERT OR IGNORE INTO profile_extensions (profile_id, extension_id) VALUES (?, ?)', [id, ext.id], res));
-                                    }
+                         // AUTO-ASSIGN EXTENSIONS AND BOOKMARKS BASED ON GROUP (only if not explicitly provided)
+                                 try {
+                                     // 1. Extensions
+                                     let extensionsToAssign: any[];
+                                     if (options.extensionIds && options.extensionIds.length > 0) {
+                                         console.log(`[ProfileManager] Assigning specific extensions: ${options.extensionIds.join(', ')}`);
+                                         extensionsToAssign = await new Promise((res) => {
+                                             this.db.all('SELECT id FROM extensions WHERE id IN (' + options.extensionIds!.map(() => '?').join(',') + ')', options.extensionIds!, (err, rows) => res(rows || []));
+                                         });
+                                         console.log(`[ProfileManager] Found ${extensionsToAssign.length} extensions in DB`);
+                                      } else {
+                                          console.log(`[ProfileManager] Auto-assigning extensions by group: ${options.groupId || 'none'}`);
+                                          extensionsToAssign = await new Promise((resolve, reject) => {
+                                              this.db.all('SELECT id FROM extensions WHERE group_id IS NULL OR group_id = ?', [options.groupId], (err, rows) => { if (err) reject(err); else resolve(rows || []); });
+                                          });
+                                      }
+                                       for (const ext of extensionsToAssign) {
+                                           await new Promise((resolve, reject) => {
+                                               this.db.run('INSERT OR IGNORE INTO profile_extensions (profile_id, extension_id, enabled) VALUES (?, ?, 1)', [id, ext.id], (err) => { if (err) reject(err); else resolve(undefined); });
+                                            });
+                                        }
+                                        console.log(`[ProfileManager] Assigned ${extensionsToAssign.length} extensions to profile ${id}`);
 
-                                    // 2. Bookmarks
-                                    const bookmarks: any[] = await new Promise((res) => {
-                                        this.db.all('SELECT id FROM bookmarks WHERE group_id IS NULL OR group_id = ?', [options.groupId], (err, rows) => res(rows || []));
-                                    });
-                                    for (const bm of bookmarks) {
-                                        await new Promise((res) => this.db.run('INSERT OR IGNORE INTO profile_bookmarks (profile_id, bookmark_id) VALUES (?, ?)', [id, bm.id], res));
-                                    }
-                                } catch (e) {
-                                    console.error('[ProfileManager] Auto-assignment failed:', e);
-                                }
+                                       // 2. Bookmarks
+                                       const bookmarks: any[] = await new Promise((resolve, reject) => {
+                                           this.db.all('SELECT id FROM bookmarks WHERE group_id IS NULL OR group_id = ?', [options.groupId], (err, rows) => { if (err) reject(err); else resolve(rows || []); });
+                                       });
+                                      for (const bm of bookmarks) {
+                                          await new Promise((resolve, reject) => {
+                                              this.db.run('INSERT OR IGNORE INTO profile_bookmarks (profile_id, bookmark_id) VALUES (?, ?)', [id, bm.id], (err) => { if (err) reject(err); else resolve(undefined); });
+                                          });
+                                      }
+                                 } catch (e) {
+                                     console.error('[ProfileManager] Auto-assignment failed:', e);
+                                 }
                                 
                                 resolve(profile);
                             })
@@ -343,38 +360,54 @@ export class ProfileManager {
         return this.softDeleteProfile(id);
     }
 
-    async updateProfile(id: string, updates: Partial<Profile>): Promise<void> {
-        const fields: string[] = [];
-        const values: any[] = [];
-        // Normalize start_urls from array to newline-separated string
-        const normalizedUpdates = { ...updates };
-        if (Array.isArray(normalizedUpdates.start_urls)) {
-            normalizedUpdates.start_urls = normalizedUpdates.start_urls.join('\n');
-        }
+     async updateProfile(id: string, updates: Partial<Profile>): Promise<void> {
+         const fields: string[] = [];
+         const values: any[] = [];
+         const normalizedUpdates = { ...updates };
+         if (Array.isArray(normalizedUpdates.start_urls)) {
+             normalizedUpdates.start_urls = normalizedUpdates.start_urls.join('\n');
+         }
 
-        for (const [key, value] of Object.entries(normalizedUpdates)) {
-            if (key === 'id') continue;
-            fields.push(`${key} = ?`);
-            values.push(value);
-        }
+         const extensionIds = normalizedUpdates.extension_ids;
+         delete normalizedUpdates.extension_ids;
 
-        if (fields.length === 0) return;
+         for (const [key, value] of Object.entries(normalizedUpdates)) {
+             if (key === 'id') continue;
+             fields.push(`${key} = ?`);
+             values.push(value);
+         }
 
-        fields.push('updated_at = ?');
-        values.push(Date.now());
-        values.push(id);
+         if (fields.length === 0 && !extensionIds) return;
 
-        return new Promise((resolve, reject) => {
-            this.db.run(
-                `UPDATE profiles SET ${fields.join(', ')} WHERE id = ?`,
-                values,
-                (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
-            );
-        });
-    }
+         fields.push('updated_at = ?');
+         values.push(Date.now());
+         values.push(id);
+
+         return new Promise((resolve, reject) => {
+             this.db.run(
+                 `UPDATE profiles SET ${fields.join(', ')} WHERE id = ?`,
+                 values,
+                 async (err) => {
+                     if (err) { reject(err); return; }
+                      if (extensionIds) {
+                          try {
+                              await new Promise((resolve, reject) => {
+                                  this.db.run('DELETE FROM profile_extensions WHERE profile_id = ?', [id], (err) => { if (err) reject(err); else resolve(undefined); });
+                              });
+                              for (const extId of extensionIds) {
+                                  await new Promise((resolve, reject) => {
+                                      this.db.run('INSERT OR IGNORE INTO profile_extensions (profile_id, extension_id, enabled) VALUES (?, ?, 1)', [id, extId], (err) => { if (err) reject(err); else resolve(undefined); });
+                                  });
+                              }
+                          } catch (e) {
+                              console.error('[ProfileManager] Extension update failed:', e);
+                          }
+                      }
+                      resolve();
+                 }
+             );
+         });
+     }
 
     async updateProfileIP(id: string, info: { ip: string; country: string; city: string; proxy_error?: boolean }): Promise<void> {
         return new Promise((resolve, reject) => {
