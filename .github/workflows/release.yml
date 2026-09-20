@@ -30,17 +30,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install Python setuptools (macOS/Linux — fixes distutils for node-gyp)
-        if: runner.os != 'Windows'
-        run: pip3 install setuptools || true
-
       - name: Install dependencies
-        run: npm ci
-
-      - name: Rebuild native modules for Electron
-        run: npx electron-rebuild --force
-        env:
-          npm_config_build_from_source: true
+        run: npm install
 
       - name: Compile TypeScript (Windows)
         if: runner.os == 'Windows'
